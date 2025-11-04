@@ -1,93 +1,365 @@
-# Claude chat manager
+# Claude Chat Reader 🤖
 
+A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat files with an intuitive interface and Unix `less`-like paging for smooth reading experience.
 
+## ✨ Features
 
-## Getting started
+- 📋 **Interactive Project Browser** - Navigate through all your Claude projects
+- 🔍 **Smart Search** - Search project names and chat content across all conversations
+- 📖 **Paged Chat Viewing** - Unix `less`-like navigation for comfortable reading
+- 📊 **Multiple Export Formats** - Pretty terminal output, Markdown, clean Book format, or raw JSON
+- 🎯 **Batch Export** - Export entire projects to organized Markdown files
+- 🎨 **Colored Output** - Beautiful terminal interface with syntax highlighting
+- ⚡ **Fast Performance** - Efficient parsing of large chat histories
+- 🔄 **Easy Navigation** - Intuitive menu system with back buttons
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## 🚀 Installation
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+### Prerequisites
+- Python 3.6 or higher
+- Claude Desktop installed with chat history
 
-## Add your files
+### Quick Install
+```bash
+# Download the script
+curl -o claude-reader.py [script-url]
+# or copy the script content to claude-reader.py
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+# Make it executable
+chmod +x claude-reader.py
 
+# Run it
+python3 claude-reader.py
 ```
-cd existing_repo
-git remote add origin http://gitlab.obodnikov.com/mike/claude-chat-manager.git
-git branch -M main
-git push -uf origin main
+
+### System-wide Installation
+```bash
+# Install globally
+sudo cp claude-reader.py /usr/local/bin/claude-reader
+sudo chmod +x /usr/local/bin/claude-reader
+
+# Now use from anywhere
+claude-reader --list
 ```
 
-## Integrate with your tools
+### Create Alias
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+alias claude='python3 /path/to/claude-reader.py'
 
-- [ ] [Set up project integrations](http://gitlab.obodnikov.com/mike/claude-chat-manager/-/settings/integrations)
+# Usage
+claude --list
+claude "My Project" -f book
+```
 
-## Collaborate with your team
+## 📖 Usage
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+### Interactive Browser (Default)
+```bash
+python3 claude-reader.py
+```
 
-## Test and Deploy
+**Main Menu:**
+```
+🤖 Claude JSONL Chat Browser
+============================================================
 
-Use the built-in continuous integration in GitLab.
+Available projects:
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+ 1) Docker Container Update Checker            (3 chats, 45 msgs, 2025-09-20 17:52)
+ 2) Ubuntu Kernel Cleanup Script               (2 chats, 32 msgs, 2025-09-19 16:45)
+ 3) Home Mike Src Pollen Web Application       (5 chats, 78 msgs, 2025-09-20 12:28)
 
-***
+Options:
+  1-3) Browse specific project
+  l) List all projects with details
+  r) Show recent projects
+  c) Search chat content
+  q) Quit
+```
 
-# Editing this README
+### Command Line Options
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+#### List Projects
+```bash
+python3 claude-reader.py --list
+```
 
-## Suggestions for a good README
+#### Search Projects
+```bash
+# Search by project name
+python3 claude-reader.py --search "docker"
+python3 claude-reader.py -s "pollen"
+```
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+#### Search Chat Content
+```bash
+# Find conversations containing specific terms
+python3 claude-reader.py --content "update checker"
+python3 claude-reader.py -c "systemctl"
+```
 
-## Name
-Choose a self-explaining name for your project.
+#### Recent Projects
+```bash
+# Show 5 most recent projects
+python3 claude-reader.py --recent 5
+python3 claude-reader.py -r 10
+```
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+#### Browse Specific Project
+```bash
+# View project chats interactively
+python3 claude-reader.py "Docker Container Update Checker"
+python3 claude-reader.py "Home Mike Src Pollen Web Application"
+```
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+#### Export Options
+```bash
+# Export to clean book format (NEW!)
+python3 claude-reader.py "My Project" --format book --output clean_chat.md
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+# Export to markdown file
+python3 claude-reader.py "My Project" --format markdown --output chat.md
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+# Export in different formats
+python3 claude-reader.py "My Project" -f pretty    # Terminal output (default)
+python3 claude-reader.py "My Project" -f book      # Clean book format
+python3 claude-reader.py "My Project" -f markdown  # Standard markdown
+python3 claude-reader.py "My Project" -f raw       # Raw JSON
+```
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+## 🎮 Navigation Controls
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+### Project Browser
+- **1-9**: Select project by number
+- **l**: List all projects with details
+- **r**: Show recent projects
+- **c**: Search chat content
+- **b**: Back to previous menu (where applicable)
+- **q**: Quit
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+### Chat Viewer (Pager Mode)
+- **Space** or **Enter**: Next page/line
+- **b**: Back one page
+- **j**: Next line (vim-style)
+- **k**: Previous line (vim-style)
+- **d**: Half page down
+- **u**: Half page up
+- **g**: Go to top
+- **G**: Go to bottom (Shift+G)
+- **q**: Return to project menu
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+### Project Menu
+- **1-9**: View specific chat
+- **a**: View all chats sequentially
+- **e**: Export all chats to markdown
+- **eb**: Export all chats to book format (NEW!)
+- **b**: Back to main menu
+- **q**: Quit
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+## 📊 Output Formats
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+### Pretty Format (Default)
+```
+👤 Message 1 - User
+🕒 2025-09-20 12:28:46
+💬 check script.js and detailed_history_styles.css...
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+🤖 Message 2 - Assistant
+🕒 2025-09-20 12:28:50
+💬 I'll check the files for you...
 
-## License
-For open source projects, say how it is licensed.
+🔧 [Tool Use: Read]
+   File: /home/mike/src/pollen-web-application/script.js
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+📄 [File Read]: /home/mike/src/pollen-web-application/script.js (1034 lines)
+```
+
+### Book Format (NEW! - Clean & Readable)
+```markdown
+# Claude Chat Export
+
+**Generated: 2025-09-21 12:25:52**
+
+> should i include package-lock file in .gitignore
+
+I'll check your current .gitignore file to see what's already included and provide guidance on package-lock.json.
+
+🔧 [Tool Use: Read]
+   File: /home/mike/src/pollen-local-api/.gitignore
+
+For Node.js projects, the decision about package-lock.json in .gitignore depends on your project type...
+
+> what about yarn.lock?
+
+For yarn.lock, the recommendation is different from package-lock.json...
+```
+
+### Markdown Format (Standard)
+```markdown
+# Claude Chat Export
+
+**Generated: 2025-09-21 10:30:00**
+
+## Message 1 - User
+**Time:** 2025-09-20 12:28:46
+
+check script.js and detailed_history_styles.css...
+
+---
+
+## Message 2 - Assistant
+**Time:** 2025-09-20 12:28:50
+
+I'll check the files for you...
+```
+
+## 🔧 Advanced Features
+
+### Tool Usage Display
+The reader intelligently formats Claude's tool usage:
+- **🔧 Tool Use**: Shows function calls with parameters
+- **📄 File Read**: Displays file operations with line counts
+- **✏️ File Edit**: Indicates file modifications
+- **✅ Todo Update**: Shows task management changes
+
+### Project Name Cleaning
+Projects starting with `-` (like `-home-mike-src-project`) are automatically cleaned to readable format (`Home Mike Src Project`).
+
+### Batch Export
+Export entire projects to organized files:
+```bash
+# In interactive mode, select project then choose:
+# 'e' for standard markdown export
+# 'eb' for clean book format export
+
+# Creates directories like:
+# ProjectName_export_20250921_103000/
+# ProjectName_book_export_20250921_103000/
+#   ├── chat-session-1.md
+#   ├── mobile-fixes.md
+#   └── api-optimization.md
+```
+
+### Search Features
+- **Project Search**: Find projects by name (supports partial matching)
+- **Content Search**: Search across all chat content with context preview
+- **Recent Filter**: Quickly find recently modified conversations
+
+## 📁 File Structure
+
+Claude Desktop stores projects in:
+- **Linux/macOS**: `~/.claude/projects/`
+- **Windows**: `%USERPROFILE%\.claude\projects\`
+
+Each project contains `.jsonl` files representing individual chats.
+
+## 🛠️ What's New
+
+### Book Format Features
+- **Clean presentation**: Removes timestamps and message numbers for distraction-free reading
+- **Simple user questions**: Questions appear as simple blockquotes (`> question text`)
+- **Direct responses**: Assistant answers without headers or metadata
+- **Perfect for sharing**: Creates clean, readable documents ideal for documentation or reference
+- **Batch export**: Use `eb` command in project browser for bulk book format export
+
+### Enhanced Header
+- Bold formatting for generation timestamp
+- Cleaner visual presentation
+- Consistent across all export formats
+
+## 🔍 Troubleshooting
+
+### Common Issues
+
+#### "Claude projects directory not found"
+```bash
+# Check if Claude Desktop is installed and has been used
+ls ~/.claude/projects/
+```
+
+#### "No valid messages found"
+- Ensure the JSONL files aren't corrupted
+- Try with `-f raw` to see the original JSON structure
+
+#### "Permission denied"
+```bash
+# Make sure the script is executable
+chmod +x claude-reader.py
+```
+
+#### Navigation doesn't work on Windows
+- The script falls back to Enter-based navigation on Windows
+- All functionality remains available, just press Enter instead of single keys
+
+### Debug Mode
+For troubleshooting, use the raw format to inspect the JSON structure:
+```bash
+python3 claude-reader.py "My Project" -f raw | head -50
+```
+
+## 📝 Examples
+
+### Daily Workflow
+```bash
+# Quick check of recent projects
+claude-reader -r 5
+
+# Search for specific topics
+claude-reader -c "docker deployment"
+
+# Browse and export a project in clean book format
+claude-reader "My Important Project"
+# Then in interactive mode: 'eb' to export in book format
+```
+
+### Documentation Generation
+```bash
+# Export all projects in clean book format for documentation
+for project in "Docker Setup" "API Development" "System Scripts"; do
+    claude-reader "$project" -f book -o "${project// /-}-book.md"
+done
+```
+
+### Content Research
+```bash
+# Find all conversations about specific topics
+claude-reader -c "authentication"
+claude-reader -c "database migration"
+claude-reader -c "error handling"
+```
+
+## 🆕 Book Format Use Cases
+
+The new book format is perfect for:
+- **📚 Documentation**: Create clean reference materials from conversations
+- **📤 Sharing**: Export conversations in a professional, readable format
+- **📝 Tutorials**: Convert technical discussions into tutorial-style documents
+- **🎯 Focus**: Read conversations without timestamp and metadata distractions
+- **📖 Archiving**: Store important conversations in a clean, timeless format
+
+## 🤝 Contributing
+
+Feel free to contribute improvements:
+1. Add support for additional export formats
+2. Enhance search functionality
+3. Improve pager navigation
+4. Add filtering options
+5. Optimize performance for very large chat histories
+
+## 📄 License
+
+This tool is provided as-is for personal use with Claude Desktop chat histories. Respect Claude's terms of service when using this tool.
+
+## 🔗 Related Tools
+
+- **Claude Desktop**: The official Claude application
+- **jq**: Command-line JSON processor for manual JSONL inspection
+- **less**: Unix pager that inspired the navigation system
+- **grep**: For additional content searching capabilities
+
+---
+
+**Made with ❤️ for the Claude community**
+
+*Featuring the new Book format for clean, distraction-free reading and sharing!*
