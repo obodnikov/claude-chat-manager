@@ -206,13 +206,12 @@ Environment Variables:
     except KeyboardInterrupt:
         print()
         print_colored("👋 Goodbye!", Colors.BLUE)
+        logger.info("Claude Chat Manager interrupted by user")
         sys.exit(0)
     except Exception as e:
         logger.exception("Unexpected error occurred")
         print_colored(f"❌ Error: {e}", Colors.RED)
         sys.exit(1)
-
-    logger.info("Claude Chat Manager exiting normally")
 
 
 if __name__ == '__main__':
