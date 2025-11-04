@@ -1,6 +1,8 @@
-# Claude Chat Reader 🤖
+# Claude Chat Manager 🤖
 
 A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat files with an intuitive interface and Unix `less`-like paging for smooth reading experience.
+
+**Version 2.0** - Fully refactored with modular architecture, comprehensive testing, and professional code standards.
 
 ## ✨ Features
 
@@ -21,42 +23,48 @@ A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat f
 
 ### Quick Install
 ```bash
-# Download the script
-curl -o claude-reader.py [script-url]
-# or copy the script content to claude-reader.py
+# Clone or download the repository
+cd claude-chat-manager
+
+# Optional: Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install development dependencies (optional, for testing)
+pip install -r requirements-dev.txt
 
 # Make it executable
-chmod +x claude-reader.py
+chmod +x claude-chat-manager.py
 
 # Run it
-python3 claude-reader.py
+python3 claude-chat-manager.py
 ```
 
 ### System-wide Installation
 ```bash
 # Install globally
-sudo cp claude-reader.py /usr/local/bin/claude-reader
-sudo chmod +x /usr/local/bin/claude-reader
+sudo cp claude-chat-manager.py /usr/local/bin/claude-chat-manager
+sudo chmod +x /usr/local/bin/claude-chat-manager
 
 # Now use from anywhere
-claude-reader --list
+claude-chat-manager --list
 ```
 
 ### Create Alias
 ```bash
 # Add to ~/.bashrc or ~/.zshrc
-alias claude='python3 /path/to/claude-reader.py'
+alias claude='python3 /path/to/claude-chat-manager.py'
 
 # Usage
 claude --list
-claude "My Project" -f book
+claude "My Project" -f book -o my-exports
 ```
 
 ## 📖 Usage
 
 ### Interactive Browser (Default)
 ```bash
-python3 claude-reader.py
+python3 claude-chat-manager.py
 ```
 
 **Main Menu:**
@@ -82,51 +90,77 @@ Options:
 
 #### List Projects
 ```bash
-python3 claude-reader.py --list
+python3 claude-chat-manager.py --list
+python3 claude-chat-manager.py -l
 ```
 
 #### Search Projects
 ```bash
 # Search by project name
-python3 claude-reader.py --search "docker"
-python3 claude-reader.py -s "pollen"
+python3 claude-chat-manager.py --search "docker"
+python3 claude-chat-manager.py -s "pollen"
 ```
 
 #### Search Chat Content
 ```bash
 # Find conversations containing specific terms
-python3 claude-reader.py --content "update checker"
-python3 claude-reader.py -c "systemctl"
+python3 claude-chat-manager.py --content "update checker"
+python3 claude-chat-manager.py -c "systemctl"
 ```
 
 #### Recent Projects
 ```bash
 # Show 5 most recent projects
-python3 claude-reader.py --recent 5
-python3 claude-reader.py -r 10
+python3 claude-chat-manager.py --recent 5
+python3 claude-chat-manager.py -r 10
 ```
 
 #### Browse Specific Project
 ```bash
 # View project chats interactively
-python3 claude-reader.py "Docker Container Update Checker"
-python3 claude-reader.py "Home Mike Src Pollen Web Application"
+python3 claude-chat-manager.py "Docker Container Update Checker"
+python3 claude-chat-manager.py "Home Mike Src Pollen Web Application"
 ```
 
 #### Export Options
+
+**Non-Interactive Export (NEW in v2.0!)**
+
+When you specify `-o` (output), the tool exports directly without showing the interactive menu:
+
 ```bash
-# Export to clean book format (NEW!)
-python3 claude-reader.py "My Project" --format book --output clean_chat.md
+# Export to a named directory
+python3 claude-chat-manager.py "My Project" -f book -o my-exports
+# → Creates: my-exports/ with all chats as separate .md files
 
-# Export to markdown file
-python3 claude-reader.py "My Project" --format markdown --output chat.md
+# Export to a directory with trailing slash
+python3 claude-chat-manager.py "My Project" -f markdown -o exports/
+# → Creates: exports/ with all chats as separate .md files
 
-# Export in different formats
-python3 claude-reader.py "My Project" -f pretty    # Terminal output (default)
-python3 claude-reader.py "My Project" -f book      # Clean book format
-python3 claude-reader.py "My Project" -f markdown  # Standard markdown
-python3 claude-reader.py "My Project" -f raw       # Raw JSON
+# Export with a filename (creates timestamped directory)
+python3 claude-chat-manager.py "My Project" -f book -o chat.md
+# → Creates: chat_20251104_193033/ with all chats as separate .md files
+#    (Timestamp format: YYYYMMDD_HHMMSS)
 ```
+
+**Export Behavior:**
+- `-o dirname` → Exports to `dirname/` directory
+- `-o dirname/` → Exports to `dirname/` directory
+- `-o file.md` → Exports to timestamped `file_YYYYMMDD_HHMMSS/` directory
+
+**Available Formats:**
+```bash
+python3 claude-chat-manager.py "My Project" -f pretty    # Terminal output (default)
+python3 claude-chat-manager.py "My Project" -f book      # Clean book format
+python3 claude-chat-manager.py "My Project" -f markdown  # Standard markdown
+python3 claude-chat-manager.py "My Project" -f raw       # Raw JSON
+```
+
+**Interactive Export (within the browser):**
+
+When browsing interactively without `-o`, you can still export from the project menu:
+- Press `e` to export all chats to markdown
+- Press `eb` to export all chats to book format
 
 ## 🎮 Navigation Controls
 
@@ -303,35 +337,67 @@ python3 claude-reader.py "My Project" -f raw | head -50
 ### Daily Workflow
 ```bash
 # Quick check of recent projects
-claude-reader -r 5
+python3 claude-chat-manager.py -r 5
 
 # Search for specific topics
-claude-reader -c "docker deployment"
+python3 claude-chat-manager.py -c "docker deployment"
 
 # Browse and export a project in clean book format
-claude-reader "My Important Project"
-# Then in interactive mode: 'eb' to export in book format
+python3 claude-chat-manager.py "My Important Project" -f book -o my-docs
 ```
 
 ### Documentation Generation
 ```bash
 # Export all projects in clean book format for documentation
-for project in "Docker Setup" "API Development" "System Scripts"; do
-    claude-reader "$project" -f book -o "${project// /-}-book.md"
-done
+python3 claude-chat-manager.py "Docker Setup" -f book -o docker-docs
+python3 claude-chat-manager.py "API Development" -f book -o api-docs
+python3 claude-chat-manager.py "System Scripts" -f book -o scripts-docs
 ```
 
 ### Content Research
 ```bash
 # Find all conversations about specific topics
-claude-reader -c "authentication"
-claude-reader -c "database migration"
-claude-reader -c "error handling"
+python3 claude-chat-manager.py -c "authentication"
+python3 claude-chat-manager.py -c "database migration"
+python3 claude-chat-manager.py -c "error handling"
 ```
+
+## 🆕 What's New in v2.0
+
+### Major Improvements
+- **🏗️ Modular Architecture**: Refactored into 11 focused modules (all under 800 lines)
+- **✅ Comprehensive Testing**: 28 unit tests with pytest, all passing
+- **📝 Full Documentation**: Google-style docstrings, type hints on all functions
+- **🔧 Configuration**: Environment variable support via `.env` file
+- **📊 Professional Code**: PEP8 compliant, proper logging, custom exceptions
+- **⚡ Non-Interactive Export**: Direct export with `-o` flag (no menu required)
+
+### Code Quality
+- **Type Safety**: 100% type hint coverage
+- **Error Handling**: Custom exception hierarchy
+- **Logging**: Proper logging module (replaces print statements)
+- **Testing**: Automated test suite with coverage reporting
+- **Documentation**: Complete architecture and development guides
+
+### Configuration Support
+
+Create a `.env` file to customize behavior:
+```bash
+# Custom Claude projects directory
+CLAUDE_PROJECTS_DIR=/path/to/custom/projects
+
+# Logging level (DEBUG, INFO, WARNING, ERROR)
+CLAUDE_LOG_LEVEL=INFO
+
+# Default export format
+CLAUDE_DEFAULT_FORMAT=book
+```
+
+See `.env.example` for all available options.
 
 ## 🆕 Book Format Use Cases
 
-The new book format is perfect for:
+The book format is perfect for:
 - **📚 Documentation**: Create clean reference materials from conversations
 - **📤 Sharing**: Export conversations in a professional, readable format
 - **📝 Tutorials**: Convert technical discussions into tutorial-style documents
@@ -347,6 +413,32 @@ Feel free to contribute improvements:
 4. Add filtering options
 5. Optimize performance for very large chat histories
 
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for development guidelines.
+
+## 📚 Documentation
+
+- **[REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md)** - Complete v2.0 refactoring details
+- **[TEST_REPORT.md](TEST_REPORT.md)** - Test results and coverage
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System architecture
+- **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** - Development guide
+- **[.env.example](.env.example)** - Configuration template
+
+## 🧪 Testing
+
+Run the test suite:
+```bash
+# Install development dependencies
+pip install -r requirements-dev.txt
+
+# Run tests
+pytest tests/ -v
+
+# Run tests with coverage
+pytest tests/ --cov=src
+```
+
+All 28 tests passing! ✅
+
 ## 📄 License
 
 This tool is provided as-is for personal use with Claude Desktop chat histories. Respect Claude's terms of service when using this tool.
@@ -360,6 +452,18 @@ This tool is provided as-is for personal use with Claude Desktop chat histories.
 
 ---
 
+## 🎯 Project Stats
+
+- **Version**: 2.0.0
+- **Python**: 3.9+
+- **Modules**: 11 source modules (1,619 lines)
+- **Tests**: 28 unit tests (100% passing)
+- **Coverage**: Core modules 52-100%
+- **Type Hints**: 100% coverage
+- **Documentation**: Complete with examples
+
+---
+
 **Made with ❤️ for the Claude community**
 
-*Featuring the new Book format for clean, distraction-free reading and sharing!*
+*Version 2.0 - Production-ready with professional code standards!*

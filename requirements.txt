@@ -1,0 +1,6 @@
+# Claude Chat Manager - Runtime Dependencies
+
+# Note: This project uses only Python standard library for runtime
+# No external dependencies required for core functionality!
+
+# For development/testing, see requirements-dev.txt
