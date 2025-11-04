@@ -1,7 +1,7 @@
 """Export functionality for various output formats.
 
 This module handles exporting chats to different formats including
-pretty terminal output, markdown, and book format.
+pretty terminal output, markdown, book format, and wiki format.
 """
 
 from datetime import datetime
@@ -11,7 +11,7 @@ import logging
 import os
 
 from .parser import parse_jsonl_file, extract_chat_messages
-from .formatters import format_content, format_tool_result, format_timestamp
+from .formatters import format_content, format_tool_result, format_timestamp, clean_project_name
 from .colors import Colors, get_role_color
 from .exceptions import ExportError
 
@@ -226,3 +226,60 @@ def export_project_chats(
 
     except Exception as e:
         raise ExportError(f"Failed to export project chats: {e}")
+
+
+def export_project_wiki(
+    project_path: Path,
+    output_file: Path,
+    use_llm: bool = True,
+    api_key: Optional[str] = None
+) -> None:
+    """Export entire project as single wiki file with AI-generated titles.
+
+    Args:
+        project_path: Path to the project directory.
+        output_file: Path where to save the wiki.
+        use_llm: Whether to use LLM for title generation.
+        api_key: OpenRouter API key (required if use_llm=True).
+
+    Raises:
+        ExportError: If export operation fails.
+    """
+    try:
+        from .wiki_generator import WikiGenerator
+        from .llm_client import OpenRouterClient
+
+        # Get all chat files
+        chat_files = list(project_path.glob('*.jsonl'))
+        if not chat_files:
+            raise ExportError(f"No chat files found in {project_path}")
+
+        chat_files.sort()
+
+        # Initialize LLM client if requested
+        llm_client = None
+        if use_llm and api_key:
+            try:
+                llm_client = OpenRouterClient(api_key=api_key)
+                logger.info("Using LLM for title generation")
+            except Exception as e:
+                logger.warning(f"Failed to initialize LLM client: {e}")
+                logger.info("Falling back to non-LLM title generation")
+
+        # Generate wiki
+        project_name = clean_project_name(project_path.name)
+        wiki_gen = WikiGenerator(llm_client=llm_client)
+        wiki_content = wiki_gen.generate_wiki(
+            chat_files=chat_files,
+            project_name=project_name,
+            use_llm_titles=use_llm and llm_client is not None
+        )
+
+        # Write to file
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(wiki_content)
+
+        logger.info(f"Wiki exported to {output_file}")
+
+    except Exception as e:
+        raise ExportError(f"Failed to export project wiki: {e}")

@@ -74,6 +74,71 @@ class Config:
         """
         return os.getenv('CLAUDE_LOG_LEVEL', 'INFO').upper()
 
+    @property
+    def openrouter_api_key(self) -> Optional[str]:
+        """Get the OpenRouter API key.
+
+        Returns:
+            API key or None if not set.
+        """
+        return os.getenv('OPENROUTER_API_KEY')
+
+    @property
+    def openrouter_model(self) -> str:
+        """Get the OpenRouter model to use.
+
+        Returns:
+            Model identifier.
+        """
+        return os.getenv('OPENROUTER_MODEL', 'anthropic/claude-3-haiku')
+
+    @property
+    def openrouter_base_url(self) -> str:
+        """Get the OpenRouter API base URL.
+
+        Returns:
+            Base URL for API.
+        """
+        return os.getenv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
+
+    @property
+    def openrouter_timeout(self) -> int:
+        """Get the OpenRouter API timeout.
+
+        Returns:
+            Timeout in seconds.
+        """
+        timeout = os.getenv('OPENROUTER_TIMEOUT', '30')
+        try:
+            return int(timeout)
+        except ValueError:
+            logger.warning(f"Invalid OPENROUTER_TIMEOUT: {timeout}, using default 30")
+            return 30
+
+    @property
+    def wiki_title_max_tokens(self) -> int:
+        """Get the maximum tokens for wiki title generation.
+
+        Returns:
+            Maximum tokens to analyze for title generation.
+        """
+        max_tokens = os.getenv('WIKI_TITLE_MAX_TOKENS', '2000')
+        try:
+            return int(max_tokens)
+        except ValueError:
+            logger.warning(f"Invalid WIKI_TITLE_MAX_TOKENS: {max_tokens}, using default 2000")
+            return 2000
+
+    @property
+    def wiki_generate_titles(self) -> bool:
+        """Check if wiki title generation is enabled.
+
+        Returns:
+            True if title generation should use LLM.
+        """
+        value = os.getenv('WIKI_GENERATE_TITLES', 'true').lower()
+        return value in ('true', '1', 'yes', 'on')
+
 
 # Global configuration instance
 config = Config()
