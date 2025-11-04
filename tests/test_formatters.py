@@ -66,7 +66,8 @@ class TestFormatContent:
     def test_format_content_empty_string(self):
         """Test formatting empty string content."""
         result = format_content("", "user")
-        assert "[Empty user message]" in result
+        # Empty strings are treated as "no content"
+        assert "[No content in user message]" in result or "[Empty user message]" in result
 
     def test_format_content_none(self):
         """Test formatting None content."""

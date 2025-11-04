@@ -1,14 +1,6 @@
-# Claude Chat Manager Dependencies
+# Claude Chat Manager - Runtime Dependencies
 
-# Testing
-pytest>=7.4.0
-pytest-cov>=4.1.0
+# Note: This project uses only Python standard library for runtime
+# No external dependencies required for core functionality!
 
-# Development
-black>=23.0.0
-mypy>=1.5.0
-pylint>=2.17.0
-flake8>=6.1.0
-
-# Note: Standard library is preferred when possible
-# No additional runtime dependencies required for core functionality
+# For development/testing, see requirements-dev.txt

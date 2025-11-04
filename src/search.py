@@ -4,6 +4,7 @@ This module provides content search across all chat files.
 """
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Tuple
 import logging
@@ -130,7 +131,3 @@ def _extract_preview(content: any, search_term: str, max_length: int = 100) -> s
                     return preview
 
     return ''
-
-
-# Import dataclass here to avoid circular import
-from dataclasses import dataclass
