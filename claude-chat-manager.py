@@ -56,11 +56,16 @@ Examples:
   %(prog)s -l                        # List all projects
   %(prog)s -r 5                      # Show 5 most recent projects
   %(prog)s -s docker                 # Search for projects with 'docker' in name
-  %(prog)s "my-project"              # View specific project chats
-  %(prog)s "my-project" -f book      # View as clean book format
-  %(prog)s "my-project" -f markdown  # View as markdown
-  %(prog)s "my-project" -o chat.md   # Save to markdown file
-  %(prog)s -c "update checker"       # Search chat content
+  %(prog)s "my-project"              # Browse project interactively
+  %(prog)s "my-project" -f book -o my-chats       # Export to directory 'my-chats/'
+  %(prog)s "my-project" -f book -o exports/       # Export to 'exports/' directory
+  %(prog)s "my-project" -f book -o chat.md        # Export to timestamped 'chat_YYYYMMDD_HHMMSS/' dir
+  %(prog)s -c "update checker"                    # Search chat content
+
+Output Behavior:
+  -o dirname       # Export to directory 'dirname/'
+  -o dirname/      # Export to directory 'dirname/'
+  -o file.md       # Export to timestamped 'file_YYYYMMDD_HHMMSS/' directory
 
 Environment Variables:
   CLAUDE_PROJECTS_DIR    # Custom Claude projects directory
@@ -116,13 +121,39 @@ Environment Variables:
             project_path = find_project_by_name(args.project)
 
             if project_path and project_path.exists():
-                if args.output or args.format != 'pretty':
-                    # Non-interactive mode: just view/export
-                    logger.info(f"Viewing project: {args.project}")
-                    # For now, browse interactively
-                    # TODO: Implement direct export mode
-                    browse_project_interactive(project_path)
+                if args.output:
+                    # Non-interactive mode: export to file or directory
+                    from src.exporters import export_project_chats
+                    from src.formatters import clean_project_name
+
+                    logger.info(f"Exporting project: {args.project} to {args.output}")
+
+                    # Determine export directory
+                    output_str = str(args.output)
+
+                    # If output ends with / or is existing directory, use it directly
+                    if output_str.endswith('/') or (args.output.exists() and args.output.is_dir()):
+                        export_dir = args.output if args.output.is_dir() else Path(output_str.rstrip('/'))
+                    else:
+                        # If output looks like a filename (has extension), use its parent or create timestamped dir
+                        if args.output.suffix:
+                            # Has extension like .md - create timestamped directory from base name
+                            from datetime import datetime
+                            output_base = args.output.stem
+                            export_dir = Path(f"{output_base}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+                        else:
+                            # No extension - treat as directory name
+                            export_dir = args.output
+
+                    # Create directory and export
+                    export_dir.mkdir(parents=True, exist_ok=True)
+                    exported_files = export_project_chats(project_path, export_dir, args.format)
+                    print_colored(f"✅ Exported {len(exported_files)} chats to: {export_dir}/", Colors.GREEN)
+                    for file in exported_files:
+                        size = file.stat().st_size
+                        print(f"   {file.name} ({size/1024:.1f}KB)")
                 else:
+                    # Interactive mode
                     browse_project_interactive(project_path)
             else:
                 print_colored(f"Project not found: {args.project}", Colors.RED)
