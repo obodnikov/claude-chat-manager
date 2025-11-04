@@ -32,11 +32,17 @@ def setup_logging() -> None:
     """Configure logging for the application."""
     log_level = getattr(logging, config.log_level, logging.INFO)
 
+    # Create logs directory if it doesn't exist
+    log_dir = Path(__file__).parent / 'logs'
+    log_dir.mkdir(exist_ok=True)
+
+    log_file = log_dir / 'claude-chat-manager.log'
+
     logging.basicConfig(
         level=log_level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler('claude-chat-manager.log'),
+            logging.FileHandler(log_file),
             logging.StreamHandler()
         ]
     )
