@@ -1,0 +1,14 @@
+# Claude Chat Manager Dependencies
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Development
+black>=23.0.0
+mypy>=1.5.0
+pylint>=2.17.0
+flake8>=6.1.0
+
+# Note: Standard library is preferred when possible
+# No additional runtime dependencies required for core functionality
