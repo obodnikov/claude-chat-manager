@@ -504,7 +504,7 @@ CLAUDE_DEFAULT_FORMAT=book
 
 # OpenRouter API for wiki generation (optional)
 OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxx
-OPENROUTER_MODEL=anthropic/claude-3-haiku
+OPENROUTER_MODEL=anthropic/claude-haiku-4.5
 
 # Wiki generation settings
 WIKI_TITLE_MAX_TOKENS=2000
@@ -536,7 +536,7 @@ The wiki feature transforms your entire project history into a single, well-orga
 7. Outputs single markdown file
 
 **Configuration:**
-- **Model**: Default is `anthropic/claude-3-haiku` (fast, cost-effective)
+- **Model**: Default is `anthropic/claude-haiku-4.5` (fast, cost-effective, latest version)
 - **Token Limit**: Analyzes first 2000 tokens of each chat for title
 - **Fallback**: Automatically uses first user question if LLM fails
 - **Zero Dependencies**: Uses Python's standard library (no requests/httpx needed)

@@ -15,7 +15,7 @@ class TestOpenRouterClient:
         """Test client initialization with default values."""
         client = OpenRouterClient(api_key="test-key")
         assert client.api_key == "test-key"
-        assert client.model == "anthropic/claude-3-haiku"
+        assert client.model == "anthropic/claude-haiku-4.5"
         assert client.base_url == "https://openrouter.ai/api/v1"
         assert client.timeout == 30
 

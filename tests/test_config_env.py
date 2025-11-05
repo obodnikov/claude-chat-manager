@@ -26,7 +26,7 @@ class TestEnvFileLoading:
         # These should return defaults if .env is not present
         assert config.log_level == 'INFO'  # Default
         assert config.wiki_generate_titles == True  # Default
-        assert config.openrouter_model == 'anthropic/claude-3-haiku'  # Default
+        assert config.openrouter_model == 'anthropic/claude-haiku-4.5'  # Default
 
     def test_env_variables_take_precedence(self):
         """Test that environment variables override .env file."""

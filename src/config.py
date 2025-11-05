@@ -142,7 +142,7 @@ class Config:
         Returns:
             Model identifier.
         """
-        return os.getenv('OPENROUTER_MODEL', 'anthropic/claude-3-haiku')
+        return os.getenv('OPENROUTER_MODEL', 'anthropic/claude-haiku-4.5')
 
     @property
     def openrouter_base_url(self) -> str:

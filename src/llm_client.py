@@ -31,7 +31,7 @@ class OpenRouterClient:
     def __init__(
         self,
         api_key: str,
-        model: str = "anthropic/claude-3-haiku",
+        model: str = "anthropic/claude-haiku-4.5",
         base_url: str = "https://openrouter.ai/api/v1",
         timeout: int = 30
     ) -> None:
@@ -39,7 +39,7 @@ class OpenRouterClient:
 
         Args:
             api_key: OpenRouter API key.
-            model: Model identifier (default: claude-3-haiku for speed/cost).
+            model: Model identifier (default: claude-haiku-4.5 for speed/cost).
             base_url: OpenRouter API base URL.
             timeout: Request timeout in seconds.
         """
@@ -110,7 +110,9 @@ Example format: "Implementing Custom Exception Handling in Python"
         Raises:
             OpenRouterError: If API request fails.
         """
-        url = urljoin(self.base_url, "chat/completions")
+        # Ensure base_url ends with / for proper URL joining
+        base = self.base_url if self.base_url.endswith('/') else f"{self.base_url}/"
+        url = urljoin(base, "chat/completions")
 
         payload = {
             "model": self.model,
@@ -131,6 +133,7 @@ Example format: "Implementing Custom Exception Handling in Python"
             "X-Title": "Claude Chat Manager"
         }
 
+        response_body = None
         try:
             req = request.Request(
                 url,
@@ -142,18 +145,28 @@ Example format: "Implementing Custom Exception Handling in Python"
             logger.debug(f"Calling OpenRouter API: {self.model}")
 
             with request.urlopen(req, timeout=self.timeout) as response:
-                response_data = json.loads(response.read().decode('utf-8'))
+                response_body = response.read().decode('utf-8')
+                logger.debug(f"Raw API response (first 200 chars): {response_body[:200]}")
+
+                if not response_body:
+                    raise OpenRouterError("Empty response from API")
+
+                response_data = json.loads(response_body)
 
             # Extract response text
             if 'choices' in response_data and len(response_data['choices']) > 0:
                 content = response_data['choices'][0]['message']['content']
-                logger.debug(f"API response: {content[:100]}...")
+                logger.debug(f"API response content: {content[:100]}...")
                 return content
             else:
+                logger.error(f"No choices in response. Full response: {response_data}")
                 raise OpenRouterError("No response from API")
 
         except error.HTTPError as e:
-            error_body = e.read().decode('utf-8') if e.fp else "No error details"
+            try:
+                error_body = e.read().decode('utf-8')
+            except:
+                error_body = "Unable to read error body"
             logger.error(f"HTTP error {e.code}: {error_body}")
 
             if e.code == 401:
@@ -171,6 +184,7 @@ Example format: "Implementing Custom Exception Handling in Python"
 
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON response: {e}")
+            logger.error(f"Response body that failed to parse: {response_body[:500] if 'response_body' in locals() else 'N/A'}")
             raise OpenRouterError("Invalid API response format")
 
         except Exception as e:
