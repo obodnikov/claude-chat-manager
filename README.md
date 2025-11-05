@@ -481,7 +481,17 @@ python3 claude-chat-manager.py -c "error handling"
 
 ### Configuration Support
 
-Create a `.env` file to customize behavior:
+Create a `.env` file **in the project directory** to customize behavior:
+
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit with your settings
+nano .env
+```
+
+Example configuration:
 ```bash
 # Custom Claude projects directory
 CLAUDE_PROJECTS_DIR=/path/to/custom/projects
@@ -500,6 +510,8 @@ OPENROUTER_MODEL=anthropic/claude-3-haiku
 WIKI_TITLE_MAX_TOKENS=2000
 WIKI_GENERATE_TITLES=true
 ```
+
+**Important:** The `.env` file is loaded from the script's installation directory, not your current working directory. This means you can run the tool from anywhere and it will still use the same configuration.
 
 See `.env.example` for all available options.
 

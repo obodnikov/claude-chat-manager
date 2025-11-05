@@ -12,6 +12,58 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _load_env_file() -> None:
+    """Load environment variables from .env file in script directory.
+
+    This function looks for .env file in the project root directory
+    (where the script is located) and loads variables into os.environ.
+    Variables already set in the environment take precedence.
+    """
+    # Get project root directory (parent of src/)
+    project_root = Path(__file__).parent.parent
+    env_file = project_root / '.env'
+
+    if not env_file.exists():
+        logger.debug(f"No .env file found at {env_file}")
+        return
+
+    logger.debug(f"Loading .env from {env_file}")
+
+    try:
+        with open(env_file, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+
+                # Skip empty lines and comments
+                if not line or line.startswith('#'):
+                    continue
+
+                # Parse KEY=VALUE
+                if '=' not in line:
+                    logger.warning(f"Invalid .env line {line_num}: {line}")
+                    continue
+
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+
+                # Remove quotes if present
+                if value and value[0] in ('"', "'") and value[-1] == value[0]:
+                    value = value[1:-1]
+
+                # Only set if not already in environment
+                if key not in os.environ:
+                    os.environ[key] = value
+                    logger.debug(f"Loaded env var: {key}")
+
+    except Exception as e:
+        logger.warning(f"Error loading .env file: {e}")
+
+
+# Load .env file before creating config instance
+_load_env_file()
+
+
 class Config:
     """Configuration management class."""
 
