@@ -10,6 +10,8 @@ A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat f
 - 🔍 **Smart Search** - Search project names and chat content across all conversations
 - 📖 **Paged Chat Viewing** - Unix `less`-like navigation for comfortable reading
 - 📊 **Multiple Export Formats** - Pretty terminal output, Markdown, clean Book format, or raw JSON
+- 📚 **Wiki Generation** - NEW! Generate AI-powered single-page wikis from entire projects
+- 🤖 **AI-Powered Titles** - Automatic chat title generation using LLM (via OpenRouter)
 - 🎯 **Batch Export** - Export entire projects to organized Markdown files
 - 🎨 **Colored Output** - Beautiful terminal interface with syntax highlighting
 - ⚡ **Fast Performance** - Efficient parsing of large chat histories
@@ -153,8 +155,41 @@ python3 claude-chat-manager.py "My Project" -f book -o chat.md
 python3 claude-chat-manager.py "My Project" -f pretty    # Terminal output (default)
 python3 claude-chat-manager.py "My Project" -f book      # Clean book format
 python3 claude-chat-manager.py "My Project" -f markdown  # Standard markdown
+python3 claude-chat-manager.py "My Project" -f wiki      # AI-powered wiki (single page)
 python3 claude-chat-manager.py "My Project" -f raw       # Raw JSON
 ```
+
+**Wiki Format (NEW!):**
+
+Generate a single-page wiki from all project chats with AI-generated titles:
+
+```bash
+# Generate wiki with AI-powered titles
+python3 claude-chat-manager.py "My Project" --wiki project-wiki.md
+
+# Or use format flag
+python3 claude-chat-manager.py "My Project" -f wiki -o my-wiki.md
+```
+
+The wiki format:
+- 📚 **Single Page**: Combines all chats into one organized document
+- 🤖 **AI Titles**: Uses LLM to generate descriptive titles for each chat
+- 📅 **Chronological**: Sorts conversations by date
+- 🧹 **Clean Content**: Filters out tool use/result noise for better readability
+- 📝 **Table of Contents**: Auto-generated with anchor links
+- 💻 **Syntax Highlighting**: Fenced code blocks with language detection
+- 🔗 **File References**: Preserves inline file references in italics
+
+**Setup for AI-Powered Titles:**
+
+1. Get a free API key from [OpenRouter](https://openrouter.ai/keys)
+2. Copy `.env.example` to `.env`
+3. Add your API key:
+   ```bash
+   OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxx
+   ```
+
+Without an API key, the tool falls back to using the first user question as the title.
 
 **Interactive Export (within the browser):**
 
@@ -209,7 +244,67 @@ When browsing interactively without `-o`, you can still export from the project 
 📄 [File Read]: /home/mike/src/pollen-web-application/script.js (1034 lines)
 ```
 
-### Book Format (NEW! - Clean & Readable)
+### Wiki Format (NEW! - AI-Powered Single Page)
+```markdown
+# My Project Wiki
+
+**Generated:** 2025-11-04 19:30:00
+
+## Table of Contents
+
+1. [Setting Up Testing Infrastructure](#setting-up-testing-infrastructure) (2024-01-15)
+2. [Implementing Custom Exception Handling](#implementing-custom-exception-handling) (2024-01-16)
+3. [Adding Configuration Management](#adding-configuration-management) (2024-01-17)
+
+---
+
+## Setting Up Testing Infrastructure
+
+**Date:** January 15, 2024
+
+> How do I add pytest to this project?
+
+First, let's install pytest and create a basic test structure. I'll help you set up a proper testing infrastructure.
+
+*Files modified: requirements-dev.txt, tests/test_config.py*
+
+```python
+# tests/test_config.py
+import pytest
+from src.config import Config
+
+def test_config_initialization():
+    config = Config()
+    assert config is not None
+```
+
+The test suite is now configured and ready to use.
+
+> Should I add coverage reporting?
+
+Yes, coverage reporting is valuable. Let's add pytest-cov to track test coverage...
+
+---
+
+## Implementing Custom Exception Handling
+
+**Date:** January 16, 2024
+
+> I need to add custom exceptions for better error handling
+
+I'll help you create a custom exception hierarchy...
+```
+
+Features:
+- **AI-Generated Titles**: Each chat gets a descriptive 8-10 word title based on content
+- **Chronological Order**: Conversations sorted by date for logical reading
+- **Clean Content**: Tool use/result messages filtered out, only conversation preserved
+- **Table of Contents**: Quick navigation with anchor links
+- **File References**: Inline references in italics (e.g., *src/config.py*)
+- **Fenced Code Blocks**: Proper syntax highlighting with language detection
+- **Fallback Titles**: Uses first user question if LLM unavailable
+
+### Book Format (Clean & Readable)
 ```markdown
 # Claude Chat Export
 
@@ -352,6 +447,10 @@ python3 claude-chat-manager.py "My Important Project" -f book -o my-docs
 python3 claude-chat-manager.py "Docker Setup" -f book -o docker-docs
 python3 claude-chat-manager.py "API Development" -f book -o api-docs
 python3 claude-chat-manager.py "System Scripts" -f book -o scripts-docs
+
+# Generate comprehensive project wikis
+python3 claude-chat-manager.py "Docker Setup" --wiki docker-wiki.md
+python3 claude-chat-manager.py "API Development" --wiki api-wiki.md
 ```
 
 ### Content Research
@@ -366,11 +465,12 @@ python3 claude-chat-manager.py -c "error handling"
 
 ### Major Improvements
 - **🏗️ Modular Architecture**: Refactored into 11 focused modules (all under 800 lines)
-- **✅ Comprehensive Testing**: 28 unit tests with pytest, all passing
+- **✅ Comprehensive Testing**: 40+ unit tests with pytest, all passing
 - **📝 Full Documentation**: Google-style docstrings, type hints on all functions
 - **🔧 Configuration**: Environment variable support via `.env` file
 - **📊 Professional Code**: PEP8 compliant, proper logging, custom exceptions
 - **⚡ Non-Interactive Export**: Direct export with `-o` flag (no menu required)
+- **📚 Wiki Generation**: NEW! AI-powered single-page wiki with LLM-generated titles
 
 ### Code Quality
 - **Type Safety**: 100% type hint coverage
@@ -381,7 +481,17 @@ python3 claude-chat-manager.py -c "error handling"
 
 ### Configuration Support
 
-Create a `.env` file to customize behavior:
+Create a `.env` file **in the project directory** to customize behavior:
+
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit with your settings
+nano .env
+```
+
+Example configuration:
 ```bash
 # Custom Claude projects directory
 CLAUDE_PROJECTS_DIR=/path/to/custom/projects
@@ -391,9 +501,45 @@ CLAUDE_LOG_LEVEL=INFO
 
 # Default export format
 CLAUDE_DEFAULT_FORMAT=book
+
+# OpenRouter API for wiki generation (optional)
+OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxx
+OPENROUTER_MODEL=anthropic/claude-haiku-4.5
+
+# Wiki generation settings
+WIKI_TITLE_MAX_TOKENS=2000
+WIKI_GENERATE_TITLES=true
 ```
 
+**Important:** The `.env` file is loaded from the script's installation directory, not your current working directory. This means you can run the tool from anywhere and it will still use the same configuration.
+
 See `.env.example` for all available options.
+
+### Wiki Generation Feature
+
+The wiki feature transforms your entire project history into a single, well-organized documentation page:
+
+**Use Cases:**
+- 📚 **Project Documentation**: Generate comprehensive docs from development chats
+- 🔍 **Knowledge Base**: Create searchable reference material from Q&A sessions
+- 📖 **Learning Resource**: Convert technical discussions into tutorial-style guides
+- 🗂️ **Archive**: Preserve important conversations in clean, readable format
+- 🤝 **Sharing**: Export project history for team members or stakeholders
+
+**How It Works:**
+1. Analyzes all chats in a project
+2. Uses AI to generate descriptive titles (or falls back to first question)
+3. Filters out tool use/result noise for clean reading
+4. Sorts chronologically by date
+5. Creates table of contents with anchor links
+6. Preserves code blocks and file references
+7. Outputs single markdown file
+
+**Configuration:**
+- **Model**: Default is `anthropic/claude-haiku-4.5` (fast, cost-effective, latest version)
+- **Token Limit**: Analyzes first 2000 tokens of each chat for title
+- **Fallback**: Automatically uses first user question if LLM fails
+- **Zero Dependencies**: Uses Python's standard library (no requests/httpx needed)
 
 ## 🆕 Book Format Use Cases
 
@@ -456,11 +602,12 @@ This tool is provided as-is for personal use with Claude Desktop chat histories.
 
 - **Version**: 2.0.0
 - **Python**: 3.9+
-- **Modules**: 11 source modules (1,619 lines)
-- **Tests**: 28 unit tests (100% passing)
+- **Modules**: 13 source modules (2,220 lines)
+- **Tests**: 40+ unit tests (100% passing)
 - **Coverage**: Core modules 52-100%
 - **Type Hints**: 100% coverage
 - **Documentation**: Complete with examples
+- **Features**: 5 export formats including AI-powered wiki
 
 ---
 

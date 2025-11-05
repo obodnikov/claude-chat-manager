@@ -12,6 +12,58 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _load_env_file() -> None:
+    """Load environment variables from .env file in script directory.
+
+    This function looks for .env file in the project root directory
+    (where the script is located) and loads variables into os.environ.
+    Variables already set in the environment take precedence.
+    """
+    # Get project root directory (parent of src/)
+    project_root = Path(__file__).parent.parent
+    env_file = project_root / '.env'
+
+    if not env_file.exists():
+        logger.debug(f"No .env file found at {env_file}")
+        return
+
+    logger.debug(f"Loading .env from {env_file}")
+
+    try:
+        with open(env_file, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+
+                # Skip empty lines and comments
+                if not line or line.startswith('#'):
+                    continue
+
+                # Parse KEY=VALUE
+                if '=' not in line:
+                    logger.warning(f"Invalid .env line {line_num}: {line}")
+                    continue
+
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+
+                # Remove quotes if present
+                if value and value[0] in ('"', "'") and value[-1] == value[0]:
+                    value = value[1:-1]
+
+                # Only set if not already in environment
+                if key not in os.environ:
+                    os.environ[key] = value
+                    logger.debug(f"Loaded env var: {key}")
+
+    except Exception as e:
+        logger.warning(f"Error loading .env file: {e}")
+
+
+# Load .env file before creating config instance
+_load_env_file()
+
+
 class Config:
     """Configuration management class."""
 
@@ -73,6 +125,71 @@ class Config:
             Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
         """
         return os.getenv('CLAUDE_LOG_LEVEL', 'INFO').upper()
+
+    @property
+    def openrouter_api_key(self) -> Optional[str]:
+        """Get the OpenRouter API key.
+
+        Returns:
+            API key or None if not set.
+        """
+        return os.getenv('OPENROUTER_API_KEY')
+
+    @property
+    def openrouter_model(self) -> str:
+        """Get the OpenRouter model to use.
+
+        Returns:
+            Model identifier.
+        """
+        return os.getenv('OPENROUTER_MODEL', 'anthropic/claude-haiku-4.5')
+
+    @property
+    def openrouter_base_url(self) -> str:
+        """Get the OpenRouter API base URL.
+
+        Returns:
+            Base URL for API.
+        """
+        return os.getenv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
+
+    @property
+    def openrouter_timeout(self) -> int:
+        """Get the OpenRouter API timeout.
+
+        Returns:
+            Timeout in seconds.
+        """
+        timeout = os.getenv('OPENROUTER_TIMEOUT', '30')
+        try:
+            return int(timeout)
+        except ValueError:
+            logger.warning(f"Invalid OPENROUTER_TIMEOUT: {timeout}, using default 30")
+            return 30
+
+    @property
+    def wiki_title_max_tokens(self) -> int:
+        """Get the maximum tokens for wiki title generation.
+
+        Returns:
+            Maximum tokens to analyze for title generation.
+        """
+        max_tokens = os.getenv('WIKI_TITLE_MAX_TOKENS', '2000')
+        try:
+            return int(max_tokens)
+        except ValueError:
+            logger.warning(f"Invalid WIKI_TITLE_MAX_TOKENS: {max_tokens}, using default 2000")
+            return 2000
+
+    @property
+    def wiki_generate_titles(self) -> bool:
+        """Check if wiki title generation is enabled.
+
+        Returns:
+            True if title generation should use LLM.
+        """
+        value = os.getenv('WIKI_GENERATE_TITLES', 'true').lower()
+        return value in ('true', '1', 'yes', 'on')
 
 
 # Global configuration instance

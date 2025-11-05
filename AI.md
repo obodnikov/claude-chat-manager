@@ -22,6 +22,7 @@ The goal: keep output consistent, production-ready, and aligned with our coding 
 - Configurations must be stored in `.env` or `config.yaml`, **never hard-coded**.
 - Keep test files only in tests/ directory
 - Keep ALL documentation files, except README.md, in separated docs/ directory
+- Logfiles should be stored in logs/ directory
 
 ---
 
