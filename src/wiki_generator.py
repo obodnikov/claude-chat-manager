@@ -13,6 +13,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from .llm_client import OpenRouterClient, OpenRouterError
 from .parser import parse_jsonl_file
 from .formatters import format_timestamp, clean_project_name
+from .wiki_parser import WikiParser, WikiChatSection
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,9 @@ class WikiGenerator:
         self,
         chat_files: List[Path],
         project_name: str,
-        use_llm_titles: bool = True
+        use_llm_titles: bool = True,
+        existing_wiki: Optional[Path] = None,
+        update_mode: str = 'new'
     ) -> str:
         """Generate complete wiki from multiple chat files.
 
@@ -42,14 +45,75 @@ class WikiGenerator:
             chat_files: List of JSONL chat file paths.
             project_name: Name of the project.
             use_llm_titles: Whether to use LLM for title generation.
+            existing_wiki: Optional path to existing wiki file to update.
+            update_mode: Mode: 'new', 'update', or 'rebuild'.
 
         Returns:
             Complete wiki as markdown string.
         """
-        logger.info(f"Generating wiki for {len(chat_files)} chats")
+        logger.info(f"Generating wiki for {len(chat_files)} chats (mode: {update_mode})")
+
+        # Handle existing wiki for update/rebuild modes
+        existing_sections = {}
+        cached_titles = {}
+
+        if update_mode in ['update', 'rebuild'] and existing_wiki and existing_wiki.exists():
+            try:
+                parser = WikiParser(existing_wiki)
+                existing_sections = parser.parse()
+                # Cache titles from existing wiki
+                cached_titles = {
+                    chat_id: section.title
+                    for chat_id, section in existing_sections.items()
+                }
+                logger.info(f"Loaded {len(existing_sections)} existing sections from wiki")
+            except Exception as e:
+                logger.warning(f"Could not parse existing wiki: {e}")
+                logger.info("Proceeding with full generation")
+                existing_sections = {}
 
         # Collect all chat sections with metadata
         chat_sections = []
+
+        # Create a map of chat file to chat ID for comparison
+        chat_file_ids = {self._get_chat_id(f): f for f in chat_files}
+
+        # Determine which chats are new
+        existing_chat_ids = set(existing_sections.keys())
+        current_chat_ids = set(chat_file_ids.keys())
+        new_chat_ids = current_chat_ids - existing_chat_ids
+
+        logger.info(f"Found {len(existing_chat_ids)} existing chats, "
+                   f"{len(new_chat_ids)} new chats")
+
+        # For update mode, check if we can do append-only
+        can_append = False
+        if update_mode == 'update' and existing_sections:
+            latest_existing_timestamp = max(
+                s.timestamp for s in existing_sections.values() if s.timestamp > 0
+            ) if existing_sections else 0
+
+            # Check if all new chats are newer than the latest existing chat
+            new_chat_timestamps = []
+            for chat_id in new_chat_ids:
+                chat_file = chat_file_ids[chat_id]
+                try:
+                    chat_data = parse_jsonl_file(chat_file)
+                    if chat_data:
+                        ts = self._extract_timestamp(chat_data)
+                        if ts > 0:
+                            new_chat_timestamps.append(ts)
+                except Exception:
+                    pass
+
+            if new_chat_timestamps:
+                min_new_timestamp = min(new_chat_timestamps)
+                can_append = min_new_timestamp > latest_existing_timestamp
+
+            if can_append:
+                logger.info("All new chats are newer - using append-only strategy")
+            else:
+                logger.info("New chats require insertion - using full rebuild strategy")
 
         for chat_file in chat_files:
             try:
@@ -58,20 +122,27 @@ class WikiGenerator:
                     logger.warning(f"Empty chat file: {chat_file.name}")
                     continue
 
-                # Generate title
-                if use_llm_titles and self.llm_client:
-                    title = self._generate_title_with_llm(chat_data)
-                else:
-                    title = self._generate_fallback_title(chat_data, chat_file)
+                # Get chat ID from filename
+                chat_id = self._get_chat_id(chat_file)
+
+                # Check if we have a cached title (for update/rebuild modes)
+                title = None
+                if chat_id in cached_titles and update_mode != 'rebuild':
+                    title = cached_titles[chat_id]
+                    logger.debug(f"Using cached title for {chat_id}: {title}")
+
+                # Generate title if not cached
+                if not title:
+                    if use_llm_titles and self.llm_client:
+                        title = self._generate_title_with_llm(chat_data)
+                    else:
+                        title = self._generate_fallback_title(chat_data, chat_file)
 
                 # Get chat date
                 date_str = self._extract_chat_date(chat_data)
 
                 # Generate clean content
                 content = self._generate_chat_content(chat_data)
-
-                # Get chat ID from filename
-                chat_id = chat_file.stem[:8]  # First 8 chars of UUID
 
                 chat_sections.append({
                     'title': title,
@@ -419,9 +490,12 @@ class WikiGenerator:
             date = section['date']
             chat_id = section['chat_id']
             content = section['content']
+            timestamp = section['timestamp']
 
             # Section header
             lines.append(f"## {i}. {title}")
+            # Add invisible metadata cache for future updates
+            lines.append(f"<!-- wiki-meta: chat_id={chat_id}, timestamp={timestamp} -->")
             lines.append(f"*Date: {date} | Chat ID: {chat_id}*\n")
 
             # Content
@@ -453,3 +527,14 @@ class WikiGenerator:
         anchor = re.sub(r'[^\w\s-]', '', anchor)
         anchor = re.sub(r'[-\s]+', '-', anchor)
         return anchor.strip('-')
+
+    def _get_chat_id(self, chat_file: Path) -> str:
+        """Extract chat ID from chat filename.
+
+        Args:
+            chat_file: Path to chat file.
+
+        Returns:
+            Chat ID (first 8 chars of UUID).
+        """
+        return chat_file.stem[:8]

@@ -171,6 +171,30 @@ python3 claude-chat-manager.py "My Project" --wiki project-wiki.md
 python3 claude-chat-manager.py "My Project" -f wiki -o my-wiki.md
 ```
 
+**Updating Existing Wikis (NEW!):**
+
+Keep your wiki up-to-date as you add new chats to your project:
+
+```bash
+# Update existing wiki with new chats (smart merge)
+python3 claude-chat-manager.py "My Project" --wiki project-wiki.md --update
+
+# Force full rebuild of entire wiki (regenerates all titles)
+python3 claude-chat-manager.py "My Project" --wiki project-wiki.md --rebuild
+```
+
+**Update Features:**
+- 🔄 **Smart Merge**: Automatically detects if new chats can be appended or need full rebuild
+- 💾 **Title Caching**: Reuses existing titles from wiki (saves API costs in update mode)
+- ⚡ **Fast Updates**: Append-only strategy when all new chats are newer than existing ones
+- 🔍 **Auto-Detection**: Compares chat IDs and timestamps to identify new conversations
+- 🛡️ **Safe Defaults**: Prompts for confirmation if wiki exists without `--update` or `--rebuild` flags
+
+**How Updates Work:**
+1. **Update Mode** (`--update`): Analyzes existing wiki, identifies new chats, reuses cached titles for existing chats, generates titles only for new chats, merges and sorts chronologically
+2. **Rebuild Mode** (`--rebuild`): Regenerates entire wiki from scratch, creates fresh AI titles for all chats (ignores cache)
+3. **Smart Strategy**: If all new chats are newer → fast append; if chronological insertion needed → full rebuild
+
 The wiki format:
 - 📚 **Single Page**: Combines all chats into one organized document
 - 🤖 **AI Titles**: Uses LLM to generate descriptive titles for each chat
@@ -179,6 +203,7 @@ The wiki format:
 - 📝 **Table of Contents**: Auto-generated with anchor links
 - 💻 **Syntax Highlighting**: Fenced code blocks with language detection
 - 🔗 **File References**: Preserves inline file references in italics
+- 🔖 **Metadata Caching**: Hidden HTML comments store chat IDs and timestamps for updates
 
 **Setup for AI-Powered Titles:**
 
@@ -451,6 +476,10 @@ python3 claude-chat-manager.py "System Scripts" -f book -o scripts-docs
 # Generate comprehensive project wikis
 python3 claude-chat-manager.py "Docker Setup" --wiki docker-wiki.md
 python3 claude-chat-manager.py "API Development" --wiki api-wiki.md
+
+# Update wikis as you add new chats
+python3 claude-chat-manager.py "Docker Setup" --wiki docker-wiki.md --update
+python3 claude-chat-manager.py "API Development" --wiki api-wiki.md --update
 ```
 
 ### Content Research
@@ -464,13 +493,14 @@ python3 claude-chat-manager.py -c "error handling"
 ## 🆕 What's New in v2.0
 
 ### Major Improvements
-- **🏗️ Modular Architecture**: Refactored into 11 focused modules (all under 800 lines)
-- **✅ Comprehensive Testing**: 40+ unit tests with pytest, all passing
+- **🏗️ Modular Architecture**: Refactored into 14 focused modules (all under 800 lines)
+- **✅ Comprehensive Testing**: 73 unit tests with pytest, all passing
 - **📝 Full Documentation**: Google-style docstrings, type hints on all functions
 - **🔧 Configuration**: Environment variable support via `.env` file
 - **📊 Professional Code**: PEP8 compliant, proper logging, custom exceptions
 - **⚡ Non-Interactive Export**: Direct export with `-o` flag (no menu required)
-- **📚 Wiki Generation**: NEW! AI-powered single-page wiki with LLM-generated titles
+- **📚 Wiki Generation**: AI-powered single-page wiki with LLM-generated titles
+- **🔄 Wiki Updates**: Smart merge and rebuild functionality for existing wikis (NEW!)
 
 ### Code Quality
 - **Type Safety**: 100% type hint coverage
@@ -525,21 +555,38 @@ The wiki feature transforms your entire project history into a single, well-orga
 - 📖 **Learning Resource**: Convert technical discussions into tutorial-style guides
 - 🗂️ **Archive**: Preserve important conversations in clean, readable format
 - 🤝 **Sharing**: Export project history for team members or stakeholders
+- 🔄 **Living Documentation**: Update wikis incrementally as you add new chats (NEW!)
 
 **How It Works:**
+
+*Initial Generation:*
 1. Analyzes all chats in a project
 2. Uses AI to generate descriptive titles (or falls back to first question)
 3. Filters out tool use/result noise for clean reading
 4. Sorts chronologically by date
 5. Creates table of contents with anchor links
 6. Preserves code blocks and file references
-7. Outputs single markdown file
+7. Embeds hidden metadata for future updates
+8. Outputs single markdown file
+
+*Updating Existing Wikis:*
+1. Parses existing wiki to extract chat IDs and cached titles
+2. Compares with current project chats to identify new ones
+3. **Update mode**: Reuses cached titles (saves API costs), generates titles only for new chats, smart merge (append or full rebuild)
+4. **Rebuild mode**: Regenerates all titles from scratch, ignores cache, fresh generation
+5. Automatic strategy selection based on chat timestamps
+
+**Update Strategies:**
+- **Append-Only**: Used when all new chats are newer than existing ones (fast)
+- **Full Rebuild**: Used when new chats need chronological insertion (thorough)
+- **Title Caching**: Stored in invisible HTML comments, reused in update mode
 
 **Configuration:**
 - **Model**: Default is `anthropic/claude-haiku-4.5` (fast, cost-effective, latest version)
 - **Token Limit**: Analyzes first 2000 tokens of each chat for title
 - **Fallback**: Automatically uses first user question if LLM fails
 - **Zero Dependencies**: Uses Python's standard library (no requests/httpx needed)
+- **Metadata Format**: `<!-- wiki-meta: chat_id=abc12345, timestamp=1704412800 -->`
 
 ## 🆕 Book Format Use Cases
 
@@ -583,7 +630,7 @@ pytest tests/ -v
 pytest tests/ --cov=src
 ```
 
-All 28 tests passing! ✅
+All 73 tests passing! ✅
 
 ## 📄 License
 
@@ -602,12 +649,12 @@ This tool is provided as-is for personal use with Claude Desktop chat histories.
 
 - **Version**: 2.0.0
 - **Python**: 3.9+
-- **Modules**: 13 source modules (2,220 lines)
-- **Tests**: 40+ unit tests (100% passing)
+- **Modules**: 14 source modules (wiki_parser added)
+- **Tests**: 73 unit tests (100% passing)
 - **Coverage**: Core modules 52-100%
 - **Type Hints**: 100% coverage
 - **Documentation**: Complete with examples
-- **Features**: 5 export formats including AI-powered wiki
+- **Features**: 5 export formats including AI-powered wiki with update/rebuild capabilities
 
 ---
 

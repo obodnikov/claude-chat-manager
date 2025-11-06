@@ -12,7 +12,7 @@ import os
 
 from .parser import parse_jsonl_file, extract_chat_messages
 from .formatters import format_content, format_tool_result, format_timestamp, clean_project_name
-from .colors import Colors, get_role_color
+from .colors import Colors, get_role_color, print_colored
 from .exceptions import ExportError
 
 logger = logging.getLogger(__name__)
@@ -232,7 +232,8 @@ def export_project_wiki(
     project_path: Path,
     output_file: Path,
     use_llm: bool = True,
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    update_mode: str = 'new'
 ) -> None:
     """Export entire project as single wiki file with AI-generated titles.
 
@@ -241,6 +242,7 @@ def export_project_wiki(
         output_file: Path where to save the wiki.
         use_llm: Whether to use LLM for title generation.
         api_key: OpenRouter API key (required if use_llm=True).
+        update_mode: Mode: 'new', 'update', or 'rebuild'.
 
     Raises:
         ExportError: If export operation fails.
@@ -269,10 +271,36 @@ def export_project_wiki(
         # Generate wiki
         project_name = clean_project_name(project_path.name)
         wiki_gen = WikiGenerator(llm_client=llm_client)
+
+        # Pass existing wiki file for update/rebuild modes
+        existing_wiki = output_file if update_mode in ['update', 'rebuild'] else None
+
+        # Print status message before generation
+        if update_mode == 'update' and existing_wiki and existing_wiki.exists():
+            # Calculate stats for feedback
+            from .wiki_parser import WikiParser
+            try:
+                parser = WikiParser(existing_wiki)
+                existing_sections = parser.parse()
+                existing_count = len(existing_sections)
+                existing_chat_ids = set(existing_sections.keys())
+                current_chat_ids = {f.stem[:8] for f in chat_files}
+                new_count = len(current_chat_ids - existing_chat_ids)
+                print_colored(
+                    f"📝 Found {existing_count} existing chats, adding {new_count} new chats",
+                    Colors.CYAN
+                )
+            except Exception:
+                pass
+        elif update_mode == 'rebuild':
+            print_colored(f"🔄 Rebuilding wiki with {len(chat_files)} chats", Colors.CYAN)
+
         wiki_content = wiki_gen.generate_wiki(
             chat_files=chat_files,
             project_name=project_name,
-            use_llm_titles=use_llm and llm_client is not None
+            use_llm_titles=use_llm and llm_client is not None,
+            existing_wiki=existing_wiki,
+            update_mode=update_mode
         )
 
         # Write to file

@@ -71,6 +71,7 @@ Claude Chat Manager is a powerful Python tool for browsing, reading, and exporti
 - Fallback: Uses first user question if LLM unavailable
 - Zero additional dependencies (uses Python's `urllib`)
 
+
 ### Configuration
 - API key: `OPENROUTER_API_KEY` in `.env`
 - Model selection: `OPENROUTER_MODEL`
@@ -80,6 +81,9 @@ Claude Chat Manager is a powerful Python tool for browsing, reading, and exporti
 ## Development Guidelines
 
 **For code style rules, refer to [AI.md](AI.md)**
+
+**When in doubt with mardown format, always rely on official documentation: https://docs.github.com/ru/get-started/writing-on-github**
+
 
 ### Testing
 - Use pytest for all tests
