@@ -1,0 +1,154 @@
+# Claude Chat Manager - AI Assistant Guidelines
+
+## Project Overview
+
+Claude Chat Manager is a powerful Python tool for browsing, reading, and exporting Claude Desktop's JSONL chat files. The tool provides an intuitive interface with Unix `less`-like paging for a smooth reading experience.
+
+**Version:** 2.0 - Fully refactored with modular architecture, comprehensive testing, and professional code standards.
+
+## Key Features
+
+- **Interactive Project Browser** - Navigate through all Claude projects
+- **Smart Search** - Search project names and chat content across conversations
+- **Paged Chat Viewing** - Unix `less`-like navigation for comfortable reading
+- **Multiple Export Formats** - Pretty terminal output, Markdown, Book format, or raw JSON
+- **Wiki Generation** - Generate AI-powered single-page wikis from entire projects
+- **AI-Powered Titles** - Automatic chat title generation using LLM (via OpenRouter)
+- **Batch Export** - Export entire projects to organized Markdown files
+- **Colored Output** - Beautiful terminal interface with syntax highlighting
+
+## Project Structure
+
+- **Source Code**: All modules in `src/` directory
+- **Tests**: All test files in `tests/` directory (pytest-based, 40+ tests)
+- **Documentation**: README.md in root, all other docs in `docs/` directory
+- **Logs**: Log files stored in `logs/` directory
+- **Configuration**: Environment variables in `.env` file (see `.env.example`)
+
+## Technical Architecture
+
+### Modular Design
+- 13 focused modules (all under 800 lines)
+- Clean separation of concerns
+- Type hints on all functions (100% coverage)
+- Google-style docstrings throughout
+- Custom exception hierarchy
+
+### Key Modules
+- **Project Management**: Handles Claude projects and JSONL parsing
+- **Interactive Browser**: Menu-driven interface for navigation
+- **Export Formats**: Multiple output formats (pretty, markdown, book, wiki, raw)
+- **Wiki Generation**: AI-powered single-page documentation
+- **Search**: Project name and content search functionality
+- **Configuration**: Environment variable support
+
+## Data Handling
+
+### Claude Desktop Structure
+- **Linux/macOS**: `~/.claude/projects/`
+- **Windows**: `%USERPROFILE%\.claude\projects\`
+- Each project contains `.jsonl` files (one per chat)
+
+### Message Types
+- User messages with text content
+- Assistant responses with text and tool usage
+- Tool use/result blocks (read, edit, bash, etc.)
+
+## Export Formats
+
+1. **Pretty** - Colored terminal output with emojis and formatting
+2. **Markdown** - Standard markdown with message headers and timestamps
+3. **Book** - Clean, distraction-free format for reading and sharing
+4. **Wiki** - AI-generated single-page documentation with TOC
+5. **Raw** - Original JSON structure for debugging
+
+## AI/LLM Integration
+
+### Wiki Generation
+- Uses OpenRouter API for AI-powered title generation
+- Default model: `anthropic/claude-haiku-4.5`
+- Analyzes first 2000 tokens of each chat
+- Fallback: Uses first user question if LLM unavailable
+- Zero additional dependencies (uses Python's `urllib`)
+
+
+### Configuration
+- API key: `OPENROUTER_API_KEY` in `.env`
+- Model selection: `OPENROUTER_MODEL`
+- Token limit: `WIKI_TITLE_MAX_TOKENS`
+- Enable/disable: `WIKI_GENERATE_TITLES`
+
+## Development Guidelines
+
+**For code style rules, refer to [AI.md](AI.md)**
+
+**When in doubt with mardown format, always rely on official documentation: https://docs.github.com/ru/get-started/writing-on-github**
+
+
+### Testing
+- Use pytest for all tests
+- 40+ unit tests (100% passing)
+- Test files mirror source structure
+- Coverage reporting available
+
+### Code Quality Standards
+- PEP8 compliant
+- Type hints on all functions
+- Google-style docstrings
+- Proper logging (no print statements)
+- Custom exception hierarchy
+- Configuration via environment variables
+
+### File Organization
+- Source: `src/` directory
+- Tests: `tests/` directory
+- Documentation: `docs/` directory (except README.md)
+- Logs: `logs/` directory
+- Config: `.env` file (from `.env.example`)
+
+## User Interface Patterns
+
+### Interactive Browser
+- Menu-driven navigation
+- Single key commands (l, r, c, q, b, e)
+- Numbered options for selection
+- Back buttons at each level
+- Quit option always available
+
+### Chat Viewer (Pager)
+- Unix `less`-like controls
+- Vim-style navigation (j/k for up/down)
+- Page scrolling (Space, b, d, u)
+- Jump to top/bottom (g/G)
+- Return to menu (q)
+
+### Command Line Interface
+- Flag-based options (-l, -s, -c, -r, -f, -o)
+- Non-interactive mode for automation
+- Direct export without menu interaction
+- Help text with examples
+
+## Common Use Cases
+
+1. **Documentation Generation** - Export project history as clean markdown or wiki
+2. **Content Research** - Search across all chats for specific topics
+3. **Project Review** - Browse recent conversations interactively
+4. **Knowledge Base** - Generate wikis from development discussions
+5. **Archiving** - Export in book format for clean, timeless storage
+
+## Configuration Options
+
+See `.env.example` for complete list. Key settings:
+- `CLAUDE_PROJECTS_DIR` - Custom projects directory
+- `CLAUDE_LOG_LEVEL` - Logging verbosity
+- `CLAUDE_DEFAULT_FORMAT` - Default export format
+- `OPENROUTER_API_KEY` - API key for wiki generation
+- `WIKI_TITLE_MAX_TOKENS` - Token limit for title generation
+
+## Important Notes
+
+- The tool reads from Claude Desktop's local storage (read-only)
+- All exports create new files, never modify originals
+- Configuration loaded from script's directory, not CWD
+- Wiki generation is optional (works without API key)
+- Respects Claude's terms of service

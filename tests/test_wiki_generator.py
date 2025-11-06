@@ -200,10 +200,14 @@ class TestWikiGenerator:
         # Should have table of contents
         assert 'Table of Contents' in wiki or 'Contents' in wiki
 
+    @patch('src.wiki_generator.config')
     @patch('src.wiki_generator.parse_jsonl_file')
     @patch('src.wiki_generator.OpenRouterClient')
-    def test_generate_wiki_with_llm(self, mock_client_class, mock_parse):
+    def test_generate_wiki_with_llm(self, mock_client_class, mock_parse, mock_config):
         """Test wiki generation with LLM-powered titles."""
+        # Disable filtering for this test
+        mock_config.wiki_skip_trivial = False
+
         # Setup mock LLM client
         mock_client = Mock()
         mock_client.generate_chat_title.return_value = "Setting Up Testing Infrastructure"
@@ -235,7 +239,7 @@ class TestWikiGenerator:
         mock_file.name = "abc12345-test-chat.jsonl"
 
         # Generate wiki
-        wiki = wiki_gen.generate_wiki(
+        wiki, stats = wiki_gen.generate_wiki(
             chat_files=[mock_file],
             project_name="Test Project",
             use_llm_titles=True
@@ -247,9 +251,17 @@ class TestWikiGenerator:
         # Verify wiki contains LLM-generated title
         assert "Setting Up Testing Infrastructure" in wiki
 
+        # Verify stats
+        assert stats.total_chats == 1
+        assert stats.titles_generated == 1
+
+    @patch('src.wiki_generator.config')
     @patch('src.wiki_generator.parse_jsonl_file')
-    def test_generate_wiki_without_llm(self, mock_parse):
+    def test_generate_wiki_without_llm(self, mock_parse, mock_config):
         """Test wiki generation with fallback titles."""
+        # Disable filtering for this test
+        mock_config.wiki_skip_trivial = False
+
         # Setup mock chat data
         mock_parse.return_value = [
             {
@@ -277,7 +289,7 @@ class TestWikiGenerator:
         mock_file.name = "abc12345-test-chat.jsonl"
 
         # Generate wiki
-        wiki = wiki_gen.generate_wiki(
+        wiki, stats = wiki_gen.generate_wiki(
             chat_files=[mock_file],
             project_name="Test Project",
             use_llm_titles=False
@@ -287,9 +299,16 @@ class TestWikiGenerator:
         assert "Project Wiki: Test Project" in wiki
         assert "pytest" in wiki.lower()
 
+        # Verify stats
+        assert stats.total_chats == 1
+
+    @patch('src.wiki_generator.config')
     @patch('src.wiki_generator.parse_jsonl_file')
-    def test_generate_wiki_sorts_chronologically(self, mock_parse):
+    def test_generate_wiki_sorts_chronologically(self, mock_parse, mock_config):
         """Test that wiki chats are sorted chronologically."""
+        # Disable filtering for this test
+        mock_config.wiki_skip_trivial = False
+
         # Setup mock chat data with different timestamps
         def parse_side_effect(file_path):
             if 'older' in str(file_path):
@@ -311,7 +330,7 @@ class TestWikiGenerator:
         newer_file.name = "newer-chat.jsonl"
 
         # Generate wiki (pass newer first to test sorting)
-        wiki = wiki_gen.generate_wiki(
+        wiki, stats = wiki_gen.generate_wiki(
             chat_files=[newer_file, older_file],
             project_name="Test Project",
             use_llm_titles=False
@@ -336,7 +355,7 @@ class TestWikiGenerator:
         mock_file.name = "empty-chat.jsonl"
 
         # Should not raise an error
-        wiki = wiki_gen.generate_wiki(
+        wiki, stats = wiki_gen.generate_wiki(
             chat_files=[mock_file],
             project_name="Test Project",
             use_llm_titles=False
@@ -345,3 +364,133 @@ class TestWikiGenerator:
         # Wiki should still be generated but with no chat sections
         assert "Project Wiki: Test Project" in wiki
         assert "Total Chats:** 0" in wiki
+
+        # Verify stats
+        assert stats.total_chats == 0
+
+    @patch('src.wiki_generator.config')
+    def test_is_pointless_chat_disabled_filtering(self, mock_config):
+        """Test that filtering can be disabled."""
+        mock_config.wiki_skip_trivial = False
+
+        wiki_gen = WikiGenerator()
+
+        # Even a very short chat should not be filtered if disabled
+        chat_data = [
+            {'message': {'role': 'user', 'content': 'hi'}, 'timestamp': 1000}
+        ]
+
+        assert not wiki_gen._is_pointless_chat(chat_data)
+
+    @patch('src.wiki_generator.config')
+    def test_is_pointless_chat_too_few_messages(self, mock_config):
+        """Test filtering based on message count."""
+        mock_config.wiki_skip_trivial = True
+        mock_config.wiki_min_messages = 3
+        mock_config.wiki_min_words = 0  # Disable word count check
+        mock_config.wiki_skip_keywords = []
+        mock_config.wiki_require_content = False
+
+        wiki_gen = WikiGenerator()
+
+        # Chat with only 2 messages (less than minimum)
+        chat_data = [
+            {'message': {'role': 'user', 'content': 'Hello there'}, 'timestamp': 1000},
+            {'message': {'role': 'assistant', 'content': 'Hi!'}, 'timestamp': 1001}
+        ]
+
+        assert wiki_gen._is_pointless_chat(chat_data)
+
+    @patch('src.wiki_generator.config')
+    def test_is_pointless_chat_too_few_words(self, mock_config):
+        """Test filtering based on word count."""
+        mock_config.wiki_skip_trivial = True
+        mock_config.wiki_min_messages = 1
+        mock_config.wiki_min_words = 50
+        mock_config.wiki_skip_keywords = []
+        mock_config.wiki_require_content = False
+
+        wiki_gen = WikiGenerator()
+
+        # Chat with few messages but also few words
+        chat_data = [
+            {'message': {'role': 'user', 'content': 'Hi'}, 'timestamp': 1000},
+            {'message': {'role': 'assistant', 'content': 'Hello'}, 'timestamp': 1001},
+            {'message': {'role': 'user', 'content': 'Ready?'}, 'timestamp': 1002}
+        ]
+
+        assert wiki_gen._is_pointless_chat(chat_data)
+
+    @patch('src.wiki_generator.config')
+    def test_is_pointless_chat_keyword_detection(self, mock_config):
+        """Test filtering based on keywords in first message."""
+        mock_config.wiki_skip_trivial = True
+        mock_config.wiki_min_messages = 1
+        mock_config.wiki_min_words = 0
+        mock_config.wiki_skip_keywords = ['warmup', 'test', 'hello']
+        mock_config.wiki_require_content = False
+
+        wiki_gen = WikiGenerator()
+
+        # Chat starting with warmup keyword
+        chat_data = [
+            {'message': {'role': 'user', 'content': 'warmup'}, 'timestamp': 1000},
+            {'message': {'role': 'assistant', 'content': 'Ready to help!'}, 'timestamp': 1001}
+        ]
+
+        assert wiki_gen._is_pointless_chat(chat_data)
+
+    @patch('src.wiki_generator.config')
+    def test_is_pointless_chat_passes_filters(self, mock_config):
+        """Test that substantial chat passes all filters."""
+        mock_config.wiki_skip_trivial = True
+        mock_config.wiki_min_messages = 3
+        mock_config.wiki_min_words = 50  # Set lower to accommodate test data (has 73 words)
+        mock_config.wiki_skip_keywords = ['warmup', 'test']
+        mock_config.wiki_require_content = False
+
+        wiki_gen = WikiGenerator()
+
+        # Substantial chat with enough messages and words
+        chat_data = [
+            {'message': {'role': 'user', 'content': 'How do I implement a custom exception handler in Python? I need detailed steps and examples.'}, 'timestamp': 1000},
+            {'message': {'role': 'assistant', 'content': 'To implement a custom exception handler, you need to create a class that inherits from Exception. Here is a detailed example with multiple approaches and best practices.'}, 'timestamp': 1001},
+            {'message': {'role': 'user', 'content': 'That helps, can you show me how to use it with decorators?'}, 'timestamp': 1002},
+            {'message': {'role': 'assistant', 'content': 'Certainly! Here is how you can use decorators with custom exceptions to handle errors gracefully in your application.'}, 'timestamp': 1003}
+        ]
+
+        assert not wiki_gen._is_pointless_chat(chat_data)
+
+    @patch('src.wiki_generator.config')
+    def test_is_pointless_chat_require_content(self, mock_config):
+        """Test content requirement filtering."""
+        mock_config.wiki_skip_trivial = True
+        mock_config.wiki_min_messages = 1
+        mock_config.wiki_min_words = 0
+        mock_config.wiki_skip_keywords = []
+        mock_config.wiki_require_content = True
+
+        wiki_gen = WikiGenerator()
+
+        # Chat without code blocks or file references
+        chat_data = [
+            {'message': {'role': 'user', 'content': 'What do you think about this idea?'}, 'timestamp': 1000},
+            {'message': {'role': 'assistant', 'content': 'It sounds interesting but needs more detail.'}, 'timestamp': 1001}
+        ]
+
+        assert wiki_gen._is_pointless_chat(chat_data)
+
+        # Chat with code block should pass
+        chat_data_with_code = [
+            {'message': {'role': 'user', 'content': 'Can you help me with this?'}, 'timestamp': 1000},
+            {'message': {'role': 'assistant', 'content': [
+                {'type': 'text', 'text': 'Sure, here is the code:'},
+                {'type': 'text', 'text': '```python\ndef test():\n    pass\n```'}
+            ]}, 'timestamp': 1001}
+        ]
+
+        assert not wiki_gen._is_pointless_chat(chat_data_with_code)
+
+    # Note: Integration test for filtering is challenging to mock properly
+    # The unit tests above (test_is_pointless_chat_*) thoroughly test the filtering logic
+    # Manual/integration testing should be used to verify end-to-end filtering works

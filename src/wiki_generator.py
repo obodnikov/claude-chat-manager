@@ -9,12 +9,28 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
+from dataclasses import dataclass
 
 from .llm_client import OpenRouterClient, OpenRouterError
 from .parser import parse_jsonl_file
 from .formatters import format_timestamp, clean_project_name
+from .wiki_parser import WikiParser, WikiChatSection
+from .config import config
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class WikiGenerationStats:
+    """Statistics from wiki generation process."""
+
+    total_chats: int
+    existing_chats: int
+    new_chats: int
+    titles_from_cache: int
+    titles_generated: int
+    strategy_used: str  # 'new', 'append', 'rebuild'
+    filtered_chats: int  # Number of chats filtered out as trivial
 
 
 class WikiGenerator:
@@ -30,26 +46,192 @@ class WikiGenerator:
         self.llm_client = llm_client
         logger.debug(f"WikiGenerator initialized (LLM: {llm_client is not None})")
 
+    def _is_pointless_chat(self, chat_data: List[Dict[str, Any]]) -> bool:
+        """Check if a chat is trivial/pointless and should be filtered out.
+
+        Uses hybrid filtering approach:
+        1. Message count threshold
+        2. Word count threshold
+        3. Keyword detection in first user message
+        4. Content requirement (optional)
+
+        Args:
+            chat_data: Parsed chat data.
+
+        Returns:
+            True if chat should be filtered out, False otherwise.
+        """
+        # Skip filtering if disabled
+        if not config.wiki_skip_trivial:
+            return False
+
+        # Extract conversation messages (exclude system messages)
+        messages = [
+            entry for entry in chat_data
+            if entry.get('message', {}).get('role') in ('user', 'assistant')
+        ]
+
+        # Check 1: Message count threshold
+        if len(messages) < config.wiki_min_messages:
+            logger.debug(f"Chat filtered: too few messages ({len(messages)} < {config.wiki_min_messages})")
+            return True
+
+        # Check 2: Word count threshold
+        total_words = 0
+        for entry in messages:
+            text = self._extract_text_only(entry.get('message', {}).get('content', ''))
+            total_words += len(text.split())
+
+        if total_words < config.wiki_min_words:
+            logger.debug(f"Chat filtered: too few words ({total_words} < {config.wiki_min_words})")
+            return True
+
+        # Check 3: Keyword detection in first user message
+        first_user_text = None
+        for entry in messages:
+            if entry.get('message', {}).get('role') == 'user':
+                first_user_text = self._extract_text_only(
+                    entry.get('message', {}).get('content', '')
+                ).lower().strip()
+                break
+
+        if first_user_text:
+            # Check if first message is a single keyword
+            first_user_words = first_user_text.split()
+            if len(first_user_words) <= 2:  # Very short first message
+                for keyword in config.wiki_skip_keywords:
+                    if keyword in first_user_text:
+                        logger.debug(f"Chat filtered: keyword '{keyword}' in first message")
+                        return True
+
+        # Check 4: Content requirement (optional)
+        if config.wiki_require_content:
+            has_content = False
+            for entry in messages:
+                content = entry.get('message', {}).get('content', '')
+                # Check for code blocks
+                if isinstance(content, str) and ('```' in content):
+                    has_content = True
+                    break
+                # Check for file references in tool use
+                elif isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, dict):
+                            if item.get('type') == 'tool_use':
+                                tool_input = item.get('input', {})
+                                if 'file_path' in tool_input:
+                                    has_content = True
+                                    break
+                            elif item.get('type') == 'text' and '```' in item.get('text', ''):
+                                has_content = True
+                                break
+                if has_content:
+                    break
+
+            if not has_content:
+                logger.debug("Chat filtered: no code blocks or file references")
+                return True
+
+        # Chat passes all filters
+        return False
+
     def generate_wiki(
         self,
         chat_files: List[Path],
         project_name: str,
-        use_llm_titles: bool = True
-    ) -> str:
+        use_llm_titles: bool = True,
+        existing_wiki: Optional[Path] = None,
+        update_mode: str = 'new'
+    ) -> Tuple[str, WikiGenerationStats]:
         """Generate complete wiki from multiple chat files.
 
         Args:
             chat_files: List of JSONL chat file paths.
             project_name: Name of the project.
             use_llm_titles: Whether to use LLM for title generation.
+            existing_wiki: Optional path to existing wiki file to update.
+            update_mode: Mode: 'new', 'update', or 'rebuild'.
 
         Returns:
-            Complete wiki as markdown string.
+            Tuple of (wiki_content, generation_stats).
         """
-        logger.info(f"Generating wiki for {len(chat_files)} chats")
+        logger.info(f"Generating wiki for {len(chat_files)} chats (mode: {update_mode})")
+
+        # Initialize stats tracking
+        titles_from_cache = 0
+        titles_generated = 0
+        filtered_chats = 0
+        strategy_used = update_mode
+
+        # Handle existing wiki for update/rebuild modes
+        existing_sections = {}
+        cached_titles = {}
+
+        if update_mode in ['update', 'rebuild'] and existing_wiki and existing_wiki.exists():
+            try:
+                parser = WikiParser(existing_wiki)
+                existing_sections = parser.parse()
+                # Cache titles from existing wiki
+                cached_titles = {
+                    chat_id: section.title
+                    for chat_id, section in existing_sections.items()
+                }
+                logger.info(f"Loaded {len(existing_sections)} existing sections from wiki")
+            except Exception as e:
+                logger.warning(f"Could not parse existing wiki: {e}")
+                logger.info("Proceeding with full generation")
+                existing_sections = {}
 
         # Collect all chat sections with metadata
         chat_sections = []
+
+        # Create a map of chat file to chat ID for comparison
+        chat_file_ids = {self._get_chat_id(f): f for f in chat_files}
+
+        # Determine which chats are new
+        existing_chat_ids = set(existing_sections.keys())
+        current_chat_ids = set(chat_file_ids.keys())
+        new_chat_ids = current_chat_ids - existing_chat_ids
+
+        logger.info(f"Found {len(existing_chat_ids)} existing chats, "
+                   f"{len(new_chat_ids)} new chats")
+
+        # For update mode, check if we can do append-only
+        can_append = False
+        if update_mode == 'update' and existing_sections:
+            # Get timestamps that are greater than 0
+            valid_timestamps = [
+                s.timestamp for s in existing_sections.values() if s.timestamp > 0
+            ]
+            latest_existing_timestamp = max(valid_timestamps) if valid_timestamps else 0
+
+            # Check if all new chats are newer than the latest existing chat
+            new_chat_timestamps = []
+            for chat_id in new_chat_ids:
+                chat_file = chat_file_ids[chat_id]
+                try:
+                    chat_data = parse_jsonl_file(chat_file)
+                    if chat_data:
+                        ts = self._extract_timestamp(chat_data)
+                        if ts > 0:
+                            new_chat_timestamps.append(ts)
+                except Exception:
+                    pass
+
+            # Only use append-only if we have valid timestamps for both existing and new chats
+            if new_chat_timestamps and latest_existing_timestamp > 0:
+                min_new_timestamp = min(new_chat_timestamps)
+                can_append = min_new_timestamp > latest_existing_timestamp
+
+            if can_append:
+                logger.info("All new chats are newer - using append-only strategy")
+                strategy_used = 'append'
+            elif latest_existing_timestamp == 0:
+                logger.info("No timestamps in existing wiki - using full rebuild strategy")
+                strategy_used = 'rebuild'
+            else:
+                logger.info("New chats require insertion - using full rebuild strategy")
+                strategy_used = 'rebuild'
 
         for chat_file in chat_files:
             try:
@@ -58,20 +240,35 @@ class WikiGenerator:
                     logger.warning(f"Empty chat file: {chat_file.name}")
                     continue
 
-                # Generate title
-                if use_llm_titles and self.llm_client:
-                    title = self._generate_title_with_llm(chat_data)
-                else:
-                    title = self._generate_fallback_title(chat_data, chat_file)
+                # Filter out pointless chats
+                if self._is_pointless_chat(chat_data):
+                    logger.info(f"Filtering out trivial chat: {chat_file.name}")
+                    filtered_chats += 1
+                    continue
+
+                # Get chat ID from filename
+                chat_id = self._get_chat_id(chat_file)
+
+                # Check if we have a cached title (for update/rebuild modes)
+                title = None
+                if chat_id in cached_titles and update_mode != 'rebuild':
+                    title = cached_titles[chat_id]
+                    titles_from_cache += 1
+                    logger.debug(f"Using cached title for {chat_id}: {title}")
+
+                # Generate title if not cached
+                if not title:
+                    if use_llm_titles and self.llm_client:
+                        title = self._generate_title_with_llm(chat_data)
+                    else:
+                        title = self._generate_fallback_title(chat_data, chat_file)
+                    titles_generated += 1
 
                 # Get chat date
                 date_str = self._extract_chat_date(chat_data)
 
                 # Generate clean content
                 content = self._generate_chat_content(chat_data)
-
-                # Get chat ID from filename
-                chat_id = chat_file.stem[:8]  # First 8 chars of UUID
 
                 chat_sections.append({
                     'title': title,
@@ -91,8 +288,19 @@ class WikiGenerator:
         # Generate final wiki
         wiki = self._build_wiki_document(project_name, chat_sections)
 
+        # Create stats object
+        stats = WikiGenerationStats(
+            total_chats=len(chat_sections),
+            existing_chats=len(existing_chat_ids),
+            new_chats=len(new_chat_ids),
+            titles_from_cache=titles_from_cache,
+            titles_generated=titles_generated,
+            strategy_used=strategy_used,
+            filtered_chats=filtered_chats
+        )
+
         logger.info(f"Wiki generated successfully with {len(chat_sections)} sections")
-        return wiki
+        return wiki, stats
 
     def _generate_title_with_llm(self, chat_data: List[Dict[str, Any]]) -> str:
         """Generate title using LLM.
@@ -419,9 +627,12 @@ class WikiGenerator:
             date = section['date']
             chat_id = section['chat_id']
             content = section['content']
+            timestamp = section['timestamp']
 
             # Section header
             lines.append(f"## {i}. {title}")
+            # Add invisible metadata cache for future updates
+            lines.append(f"<!-- wiki-meta: chat_id={chat_id}, timestamp={timestamp} -->")
             lines.append(f"*Date: {date} | Chat ID: {chat_id}*\n")
 
             # Content
@@ -453,3 +664,14 @@ class WikiGenerator:
         anchor = re.sub(r'[^\w\s-]', '', anchor)
         anchor = re.sub(r'[-\s]+', '-', anchor)
         return anchor.strip('-')
+
+    def _get_chat_id(self, chat_file: Path) -> str:
+        """Extract chat ID from chat filename.
+
+        Args:
+            chat_file: Path to chat file.
+
+        Returns:
+            Chat ID (first 8 chars of UUID).
+        """
+        return chat_file.stem[:8]

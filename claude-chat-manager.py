@@ -67,6 +67,8 @@ Examples:
   %(prog)s "my-project" -f book -o exports/       # Export to 'exports/' directory
   %(prog)s "my-project" -f book -o chat.md        # Export to timestamped 'chat_YYYYMMDD_HHMMSS/' dir
   %(prog)s "my-project" --wiki project-wiki.md    # Generate wiki with AI titles
+  %(prog)s "my-project" --wiki wiki.md --update   # Update existing wiki with new chats
+  %(prog)s "my-project" --wiki wiki.md --rebuild  # Force full rebuild of existing wiki
   %(prog)s -c "update checker"                    # Search chat content
 
 Output Behavior:
@@ -91,6 +93,8 @@ Environment Variables:
     parser.add_argument('-o', '--output', metavar='FILE', type=Path, help='Save output to file')
     parser.add_argument('-c', '--content', metavar='TERM', help='Search for content within chats')
     parser.add_argument('--wiki', metavar='FILE', type=Path, help='Generate wiki page from all project chats (shortcut for -f wiki -o FILE)')
+    parser.add_argument('--update', action='store_true', help='Update existing wiki file with new chats (use with --wiki)')
+    parser.add_argument('--rebuild', action='store_true', help='Force full rebuild of existing wiki file (use with --wiki)')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging')
 
     args = parser.parse_args()
@@ -136,7 +140,25 @@ Environment Variables:
                     # Wiki export mode - single file output
                     from src.exporters import export_project_wiki
 
-                    logger.info(f"Generating wiki for project: {args.project}")
+                    # Check if file exists and handle accordingly
+                    wiki_exists = wiki_output.exists()
+                    mode = 'rebuild' if args.rebuild else ('update' if args.update else 'new')
+
+                    if wiki_exists and mode == 'new':
+                        # File exists but no --update or --rebuild flag
+                        print_colored(f"⚠️  Wiki file already exists: {wiki_output}", Colors.YELLOW)
+                        print(f"   Use '--wiki {wiki_output} --update' to add new chats to existing wiki")
+                        print(f"   Use '--wiki {wiki_output} --rebuild' to regenerate the entire wiki")
+                        print(f"   Or remove the file manually to create a new one\n")
+                        response = input("Remove existing file and create new wiki? [y/N]: ").strip().lower()
+                        if response not in ['y', 'yes']:
+                            print_colored("Operation cancelled.", Colors.YELLOW)
+                            sys.exit(0)
+                        else:
+                            wiki_output.unlink()
+                            print_colored(f"Removed existing file. Creating new wiki...\n", Colors.BLUE)
+
+                    logger.info(f"Generating wiki for project: {args.project} (mode: {mode})")
 
                     # Get API settings from config
                     use_llm = config.wiki_generate_titles
@@ -148,12 +170,23 @@ Environment Variables:
                         print("   Get your key at: https://openrouter.ai/keys\n")
                         use_llm = False
 
-                    # Export wiki
+                    # Export wiki (pass mode for update/rebuild logic)
                     wiki_output.parent.mkdir(parents=True, exist_ok=True)
-                    export_project_wiki(project_path, wiki_output, use_llm, api_key)
+                    export_project_wiki(
+                        project_path,
+                        wiki_output,
+                        use_llm,
+                        api_key,
+                        update_mode=mode
+                    )
 
                     size = wiki_output.stat().st_size
-                    print_colored(f"✅ Wiki generated: {wiki_output} ({size/1024:.1f}KB)", Colors.GREEN)
+                    if mode == 'update':
+                        print_colored(f"✅ Wiki updated: {wiki_output} ({size/1024:.1f}KB)", Colors.GREEN)
+                    elif mode == 'rebuild':
+                        print_colored(f"✅ Wiki rebuilt: {wiki_output} ({size/1024:.1f}KB)", Colors.GREEN)
+                    else:
+                        print_colored(f"✅ Wiki generated: {wiki_output} ({size/1024:.1f}KB)", Colors.GREEN)
 
                     if use_llm:
                         print(f"   Using AI-generated titles via {config.openrouter_model}")
