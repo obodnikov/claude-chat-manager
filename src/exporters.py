@@ -18,6 +18,39 @@ from .exceptions import ExportError
 logger = logging.getLogger(__name__)
 
 
+def _display_wiki_summary(stats: 'WikiGenerationStats', mode: str) -> None:
+    """Display summary of wiki generation statistics.
+
+    Args:
+        stats: Wiki generation statistics.
+        mode: Generation mode ('new', 'update', 'rebuild').
+    """
+    from .wiki_generator import WikiGenerationStats
+
+    print()  # Blank line before summary
+    print_colored("📊 Wiki Generation Summary:", Colors.CYAN)
+    print_colored("=" * 50, Colors.CYAN)
+
+    if mode == 'new':
+        print(f"   Total chats in wiki: {stats.total_chats}")
+        print(f"   Titles generated: {stats.titles_generated}")
+    elif mode == 'update':
+        print(f"   Previously in wiki: {stats.existing_chats} chats")
+        print(f"   Added to wiki: {stats.new_chats} new chats")
+        print(f"   Total chats now: {stats.total_chats}")
+        print()
+        print(f"   Titles reused (cached): {stats.titles_from_cache}")
+        print(f"   Titles newly generated: {stats.titles_generated}")
+        print()
+        strategy_label = "Append-only (fast)" if stats.strategy_used == 'append' else "Full rebuild (thorough)"
+        print(f"   Strategy used: {strategy_label}")
+    elif mode == 'rebuild':
+        print(f"   Total chats in wiki: {stats.total_chats}")
+        print(f"   All titles regenerated: {stats.titles_generated}")
+
+    print_colored("=" * 50, Colors.CYAN)
+
+
 def export_chat_pretty(chat_data: List[Dict[str, Any]]) -> str:
     """Export chat in pretty terminal format with colors.
 
@@ -295,7 +328,7 @@ def export_project_wiki(
         elif update_mode == 'rebuild':
             print_colored(f"🔄 Rebuilding wiki with {len(chat_files)} chats", Colors.CYAN)
 
-        wiki_content = wiki_gen.generate_wiki(
+        wiki_content, stats = wiki_gen.generate_wiki(
             chat_files=chat_files,
             project_name=project_name,
             use_llm_titles=use_llm and llm_client is not None,
@@ -308,6 +341,9 @@ def export_project_wiki(
             f.write(wiki_content)
 
         logger.info(f"Wiki exported to {output_file}")
+
+        # Display summary statistics
+        _display_wiki_summary(stats, update_mode)
 
     except Exception as e:
         raise ExportError(f"Failed to export project wiki: {e}")

@@ -9,6 +9,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
+from dataclasses import dataclass
 
 from .llm_client import OpenRouterClient, OpenRouterError
 from .parser import parse_jsonl_file
@@ -16,6 +17,18 @@ from .formatters import format_timestamp, clean_project_name
 from .wiki_parser import WikiParser, WikiChatSection
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class WikiGenerationStats:
+    """Statistics from wiki generation process."""
+
+    total_chats: int
+    existing_chats: int
+    new_chats: int
+    titles_from_cache: int
+    titles_generated: int
+    strategy_used: str  # 'new', 'append', 'rebuild'
 
 
 class WikiGenerator:
@@ -38,7 +51,7 @@ class WikiGenerator:
         use_llm_titles: bool = True,
         existing_wiki: Optional[Path] = None,
         update_mode: str = 'new'
-    ) -> str:
+    ) -> Tuple[str, WikiGenerationStats]:
         """Generate complete wiki from multiple chat files.
 
         Args:
@@ -49,9 +62,14 @@ class WikiGenerator:
             update_mode: Mode: 'new', 'update', or 'rebuild'.
 
         Returns:
-            Complete wiki as markdown string.
+            Tuple of (wiki_content, generation_stats).
         """
         logger.info(f"Generating wiki for {len(chat_files)} chats (mode: {update_mode})")
+
+        # Initialize stats tracking
+        titles_from_cache = 0
+        titles_generated = 0
+        strategy_used = update_mode
 
         # Handle existing wiki for update/rebuild modes
         existing_sections = {}
@@ -89,9 +107,11 @@ class WikiGenerator:
         # For update mode, check if we can do append-only
         can_append = False
         if update_mode == 'update' and existing_sections:
-            latest_existing_timestamp = max(
+            # Get timestamps that are greater than 0
+            valid_timestamps = [
                 s.timestamp for s in existing_sections.values() if s.timestamp > 0
-            ) if existing_sections else 0
+            ]
+            latest_existing_timestamp = max(valid_timestamps) if valid_timestamps else 0
 
             # Check if all new chats are newer than the latest existing chat
             new_chat_timestamps = []
@@ -106,14 +126,20 @@ class WikiGenerator:
                 except Exception:
                     pass
 
-            if new_chat_timestamps:
+            # Only use append-only if we have valid timestamps for both existing and new chats
+            if new_chat_timestamps and latest_existing_timestamp > 0:
                 min_new_timestamp = min(new_chat_timestamps)
                 can_append = min_new_timestamp > latest_existing_timestamp
 
             if can_append:
                 logger.info("All new chats are newer - using append-only strategy")
+                strategy_used = 'append'
+            elif latest_existing_timestamp == 0:
+                logger.info("No timestamps in existing wiki - using full rebuild strategy")
+                strategy_used = 'rebuild'
             else:
                 logger.info("New chats require insertion - using full rebuild strategy")
+                strategy_used = 'rebuild'
 
         for chat_file in chat_files:
             try:
@@ -129,6 +155,7 @@ class WikiGenerator:
                 title = None
                 if chat_id in cached_titles and update_mode != 'rebuild':
                     title = cached_titles[chat_id]
+                    titles_from_cache += 1
                     logger.debug(f"Using cached title for {chat_id}: {title}")
 
                 # Generate title if not cached
@@ -137,6 +164,7 @@ class WikiGenerator:
                         title = self._generate_title_with_llm(chat_data)
                     else:
                         title = self._generate_fallback_title(chat_data, chat_file)
+                    titles_generated += 1
 
                 # Get chat date
                 date_str = self._extract_chat_date(chat_data)
@@ -162,8 +190,18 @@ class WikiGenerator:
         # Generate final wiki
         wiki = self._build_wiki_document(project_name, chat_sections)
 
+        # Create stats object
+        stats = WikiGenerationStats(
+            total_chats=len(chat_sections),
+            existing_chats=len(existing_chat_ids),
+            new_chats=len(new_chat_ids),
+            titles_from_cache=titles_from_cache,
+            titles_generated=titles_generated,
+            strategy_used=strategy_used
+        )
+
         logger.info(f"Wiki generated successfully with {len(chat_sections)} sections")
-        return wiki
+        return wiki, stats
 
     def _generate_title_with_llm(self, chat_data: List[Dict[str, Any]]) -> str:
         """Generate title using LLM.

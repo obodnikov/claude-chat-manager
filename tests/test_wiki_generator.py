@@ -235,7 +235,7 @@ class TestWikiGenerator:
         mock_file.name = "abc12345-test-chat.jsonl"
 
         # Generate wiki
-        wiki = wiki_gen.generate_wiki(
+        wiki, stats = wiki_gen.generate_wiki(
             chat_files=[mock_file],
             project_name="Test Project",
             use_llm_titles=True
@@ -246,6 +246,10 @@ class TestWikiGenerator:
 
         # Verify wiki contains LLM-generated title
         assert "Setting Up Testing Infrastructure" in wiki
+
+        # Verify stats
+        assert stats.total_chats == 1
+        assert stats.titles_generated == 1
 
     @patch('src.wiki_generator.parse_jsonl_file')
     def test_generate_wiki_without_llm(self, mock_parse):
@@ -277,7 +281,7 @@ class TestWikiGenerator:
         mock_file.name = "abc12345-test-chat.jsonl"
 
         # Generate wiki
-        wiki = wiki_gen.generate_wiki(
+        wiki, stats = wiki_gen.generate_wiki(
             chat_files=[mock_file],
             project_name="Test Project",
             use_llm_titles=False
@@ -286,6 +290,9 @@ class TestWikiGenerator:
         # Verify wiki contains project name and content
         assert "Project Wiki: Test Project" in wiki
         assert "pytest" in wiki.lower()
+
+        # Verify stats
+        assert stats.total_chats == 1
 
     @patch('src.wiki_generator.parse_jsonl_file')
     def test_generate_wiki_sorts_chronologically(self, mock_parse):
@@ -311,7 +318,7 @@ class TestWikiGenerator:
         newer_file.name = "newer-chat.jsonl"
 
         # Generate wiki (pass newer first to test sorting)
-        wiki = wiki_gen.generate_wiki(
+        wiki, stats = wiki_gen.generate_wiki(
             chat_files=[newer_file, older_file],
             project_name="Test Project",
             use_llm_titles=False
@@ -336,7 +343,7 @@ class TestWikiGenerator:
         mock_file.name = "empty-chat.jsonl"
 
         # Should not raise an error
-        wiki = wiki_gen.generate_wiki(
+        wiki, stats = wiki_gen.generate_wiki(
             chat_files=[mock_file],
             project_name="Test Project",
             use_llm_titles=False
@@ -345,3 +352,6 @@ class TestWikiGenerator:
         # Wiki should still be generated but with no chat sections
         assert "Project Wiki: Test Project" in wiki
         assert "Total Chats:** 0" in wiki
+
+        # Verify stats
+        assert stats.total_chats == 0
