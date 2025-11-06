@@ -191,6 +191,64 @@ class Config:
         value = os.getenv('WIKI_GENERATE_TITLES', 'true').lower()
         return value in ('true', '1', 'yes', 'on')
 
+    @property
+    def wiki_min_messages(self) -> int:
+        """Get the minimum message count for a chat to be included in wiki.
+
+        Returns:
+            Minimum number of messages.
+        """
+        min_messages = os.getenv('WIKI_MIN_MESSAGES', '3')
+        try:
+            return int(min_messages)
+        except ValueError:
+            logger.warning(f"Invalid WIKI_MIN_MESSAGES: {min_messages}, using default 3")
+            return 3
+
+    @property
+    def wiki_min_words(self) -> int:
+        """Get the minimum word count for a chat to be included in wiki.
+
+        Returns:
+            Minimum total word count.
+        """
+        min_words = os.getenv('WIKI_MIN_WORDS', '75')
+        try:
+            return int(min_words)
+        except ValueError:
+            logger.warning(f"Invalid WIKI_MIN_WORDS: {min_words}, using default 75")
+            return 75
+
+    @property
+    def wiki_skip_trivial(self) -> bool:
+        """Check if trivial chats should be filtered out.
+
+        Returns:
+            True if trivial chats should be skipped.
+        """
+        value = os.getenv('WIKI_SKIP_TRIVIAL', 'true').lower()
+        return value in ('true', '1', 'yes', 'on')
+
+    @property
+    def wiki_skip_keywords(self) -> list:
+        """Get the list of keywords that indicate trivial chats.
+
+        Returns:
+            List of keywords to skip.
+        """
+        keywords = os.getenv('WIKI_SKIP_KEYWORDS', 'warmup,test,hello,hi,ready')
+        return [k.strip().lower() for k in keywords.split(',') if k.strip()]
+
+    @property
+    def wiki_require_content(self) -> bool:
+        """Check if wiki entries must have code blocks or file references.
+
+        Returns:
+            True if content (code/files) is required.
+        """
+        value = os.getenv('WIKI_REQUIRE_CONTENT', 'false').lower()
+        return value in ('true', '1', 'yes', 'on')
+
 
 # Global configuration instance
 config = Config()

@@ -195,11 +195,57 @@ python3 claude-chat-manager.py "My Project" --wiki project-wiki.md --rebuild
 2. **Rebuild Mode** (`--rebuild`): Regenerates entire wiki from scratch, creates fresh AI titles for all chats (ignores cache)
 3. **Smart Strategy**: If all new chats are newer → fast append; if chronological insertion needed → full rebuild
 
-The wiki format:
+**Filtering Trivial Chats (NEW!):**
+
+The wiki generator automatically filters out trivial or pointless conversations to keep your documentation focused and meaningful:
+
+```bash
+# Filtering is enabled by default with these thresholds:
+# - Minimum 3 messages
+# - Minimum 75 total words
+# - Filters warmup/test/hello keywords in short first messages
+```
+
+**Customize Filtering** (in your `.env` file):
+```bash
+# Enable/disable filtering (default: true)
+WIKI_SKIP_TRIVIAL=true
+
+# Minimum messages for a chat to be included (default: 3)
+WIKI_MIN_MESSAGES=3
+
+# Minimum total word count (default: 75)
+WIKI_MIN_WORDS=75
+
+# Keywords that indicate trivial chats (comma-separated)
+WIKI_SKIP_KEYWORDS=warmup,test,hello,hi,ready
+
+# Require code blocks or file references (default: false)
+WIKI_REQUIRE_CONTENT=false
+```
+
+**Filtering Criteria:**
+- ⚖️ **Message Count**: Chats with too few messages are filtered
+- 📝 **Word Count**: Very short conversations are excluded
+- 🔑 **Keyword Detection**: "Warmup", "test", etc. in brief first messages
+- 💻 **Content Requirement**: Optionally require code or file modifications
+
+After generation, the summary shows how many chats were filtered:
+```
+📊 Wiki Generation Summary:
+==================================================
+   Total chats in wiki: 27
+   Filtered out (trivial): 3 chats
+   Titles generated: 27
+==================================================
+```
+
+**The wiki format:**
 - 📚 **Single Page**: Combines all chats into one organized document
 - 🤖 **AI Titles**: Uses LLM to generate descriptive titles for each chat
 - 📅 **Chronological**: Sorts conversations by date
 - 🧹 **Clean Content**: Filters out tool use/result noise for better readability
+- 🔍 **Smart Filtering**: Automatically excludes trivial warmup/test chats
 - 📝 **Table of Contents**: Auto-generated with anchor links
 - 💻 **Syntax Highlighting**: Fenced code blocks with language detection
 - 🔗 **File References**: Preserves inline file references in italics

@@ -33,10 +33,14 @@ def _display_wiki_summary(stats: 'WikiGenerationStats', mode: str) -> None:
 
     if mode == 'new':
         print(f"   Total chats in wiki: {stats.total_chats}")
+        if stats.filtered_chats > 0:
+            print(f"   Filtered out (trivial): {stats.filtered_chats} chats")
         print(f"   Titles generated: {stats.titles_generated}")
     elif mode == 'update':
         print(f"   Previously in wiki: {stats.existing_chats} chats")
         print(f"   Added to wiki: {stats.new_chats} new chats")
+        if stats.filtered_chats > 0:
+            print(f"   Filtered out (trivial): {stats.filtered_chats} chats")
         print(f"   Total chats now: {stats.total_chats}")
         print()
         print(f"   Titles reused (cached): {stats.titles_from_cache}")
@@ -46,6 +50,8 @@ def _display_wiki_summary(stats: 'WikiGenerationStats', mode: str) -> None:
         print(f"   Strategy used: {strategy_label}")
     elif mode == 'rebuild':
         print(f"   Total chats in wiki: {stats.total_chats}")
+        if stats.filtered_chats > 0:
+            print(f"   Filtered out (trivial): {stats.filtered_chats} chats")
         print(f"   All titles regenerated: {stats.titles_generated}")
 
     print_colored("=" * 50, Colors.CYAN)

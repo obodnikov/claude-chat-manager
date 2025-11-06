@@ -15,6 +15,7 @@ from .llm_client import OpenRouterClient, OpenRouterError
 from .parser import parse_jsonl_file
 from .formatters import format_timestamp, clean_project_name
 from .wiki_parser import WikiParser, WikiChatSection
+from .config import config
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class WikiGenerationStats:
     titles_from_cache: int
     titles_generated: int
     strategy_used: str  # 'new', 'append', 'rebuild'
+    filtered_chats: int  # Number of chats filtered out as trivial
 
 
 class WikiGenerator:
@@ -43,6 +45,95 @@ class WikiGenerator:
         """
         self.llm_client = llm_client
         logger.debug(f"WikiGenerator initialized (LLM: {llm_client is not None})")
+
+    def _is_pointless_chat(self, chat_data: List[Dict[str, Any]]) -> bool:
+        """Check if a chat is trivial/pointless and should be filtered out.
+
+        Uses hybrid filtering approach:
+        1. Message count threshold
+        2. Word count threshold
+        3. Keyword detection in first user message
+        4. Content requirement (optional)
+
+        Args:
+            chat_data: Parsed chat data.
+
+        Returns:
+            True if chat should be filtered out, False otherwise.
+        """
+        # Skip filtering if disabled
+        if not config.wiki_skip_trivial:
+            return False
+
+        # Extract conversation messages (exclude system messages)
+        messages = [
+            entry for entry in chat_data
+            if entry.get('message', {}).get('role') in ('user', 'assistant')
+        ]
+
+        # Check 1: Message count threshold
+        if len(messages) < config.wiki_min_messages:
+            logger.debug(f"Chat filtered: too few messages ({len(messages)} < {config.wiki_min_messages})")
+            return True
+
+        # Check 2: Word count threshold
+        total_words = 0
+        for entry in messages:
+            text = self._extract_text_only(entry.get('message', {}).get('content', ''))
+            total_words += len(text.split())
+
+        if total_words < config.wiki_min_words:
+            logger.debug(f"Chat filtered: too few words ({total_words} < {config.wiki_min_words})")
+            return True
+
+        # Check 3: Keyword detection in first user message
+        first_user_text = None
+        for entry in messages:
+            if entry.get('message', {}).get('role') == 'user':
+                first_user_text = self._extract_text_only(
+                    entry.get('message', {}).get('content', '')
+                ).lower().strip()
+                break
+
+        if first_user_text:
+            # Check if first message is a single keyword
+            first_user_words = first_user_text.split()
+            if len(first_user_words) <= 2:  # Very short first message
+                for keyword in config.wiki_skip_keywords:
+                    if keyword in first_user_text:
+                        logger.debug(f"Chat filtered: keyword '{keyword}' in first message")
+                        return True
+
+        # Check 4: Content requirement (optional)
+        if config.wiki_require_content:
+            has_content = False
+            for entry in messages:
+                content = entry.get('message', {}).get('content', '')
+                # Check for code blocks
+                if isinstance(content, str) and ('```' in content):
+                    has_content = True
+                    break
+                # Check for file references in tool use
+                elif isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, dict):
+                            if item.get('type') == 'tool_use':
+                                tool_input = item.get('input', {})
+                                if 'file_path' in tool_input:
+                                    has_content = True
+                                    break
+                            elif item.get('type') == 'text' and '```' in item.get('text', ''):
+                                has_content = True
+                                break
+                if has_content:
+                    break
+
+            if not has_content:
+                logger.debug("Chat filtered: no code blocks or file references")
+                return True
+
+        # Chat passes all filters
+        return False
 
     def generate_wiki(
         self,
@@ -69,6 +160,7 @@ class WikiGenerator:
         # Initialize stats tracking
         titles_from_cache = 0
         titles_generated = 0
+        filtered_chats = 0
         strategy_used = update_mode
 
         # Handle existing wiki for update/rebuild modes
@@ -148,6 +240,12 @@ class WikiGenerator:
                     logger.warning(f"Empty chat file: {chat_file.name}")
                     continue
 
+                # Filter out pointless chats
+                if self._is_pointless_chat(chat_data):
+                    logger.info(f"Filtering out trivial chat: {chat_file.name}")
+                    filtered_chats += 1
+                    continue
+
                 # Get chat ID from filename
                 chat_id = self._get_chat_id(chat_file)
 
@@ -197,7 +295,8 @@ class WikiGenerator:
             new_chats=len(new_chat_ids),
             titles_from_cache=titles_from_cache,
             titles_generated=titles_generated,
-            strategy_used=strategy_used
+            strategy_used=strategy_used,
+            filtered_chats=filtered_chats
         )
 
         logger.info(f"Wiki generated successfully with {len(chat_sections)} sections")
