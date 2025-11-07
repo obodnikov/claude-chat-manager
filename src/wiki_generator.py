@@ -135,6 +135,65 @@ class WikiGenerator:
         # Chat passes all filters
         return False
 
+    def _strip_system_tags(self, text: str) -> str:
+        """Remove system notification tags from user message.
+
+        Args:
+            text: User message text that may contain system tags.
+
+        Returns:
+            Text with system tags removed.
+        """
+        if not config.wiki_filter_system_tags:
+            return text
+
+        # Known system tag patterns
+        system_patterns = [
+            r'<ide_opened_file>.*?</ide_opened_file>',
+            r'<system-reminder>.*?</system-reminder>',
+            r'<user-prompt-submit-hook>.*?</user-prompt-submit-hook>',
+            r'<command-message>.*?</command-message>',
+        ]
+
+        # Remove each pattern
+        cleaned = text
+        for pattern in system_patterns:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.DOTALL)
+
+        # Clean up extra whitespace
+        cleaned = re.sub(r'\n\n\n+', '\n\n', cleaned)  # Max 2 newlines
+        cleaned = cleaned.strip()
+
+        return cleaned
+
+    def _clean_user_message(self, text: str) -> Optional[str]:
+        """Clean user message by removing system notifications.
+
+        Uses smart detection:
+        - If message is only system tags → Returns None (skip message)
+        - If message has system tags + user text → Returns cleaned text
+        - If no system tags → Returns original text
+
+        Args:
+            text: User message text.
+
+        Returns:
+            Cleaned text or None if message is purely system notification.
+        """
+        if not config.wiki_filter_system_tags:
+            return text
+
+        # Strip system tags
+        cleaned = self._strip_system_tags(text)
+
+        # If nothing meaningful left after stripping, skip this message
+        # Consider message meaningless if < 5 chars or only whitespace
+        if not cleaned or len(cleaned.strip()) < 5:
+            logger.debug("Filtered system-only user message")
+            return None
+
+        return cleaned
+
     def generate_wiki(
         self,
         chat_files: List[Path],
@@ -450,6 +509,15 @@ class WikiGenerator:
 
             # Format based on role
             if role == 'user':
+                # Clean system tags from user message
+                cleaned_text = self._clean_user_message(text)
+
+                # Skip if message was purely system notification
+                if not cleaned_text:
+                    continue
+
+                # Use cleaned text
+                text = cleaned_text
                 user_question_count += 1
 
                 # Extract first line or truncate for TOC

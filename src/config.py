@@ -249,6 +249,16 @@ class Config:
         value = os.getenv('WIKI_REQUIRE_CONTENT', 'false').lower()
         return value in ('true', '1', 'yes', 'on')
 
+    @property
+    def wiki_filter_system_tags(self) -> bool:
+        """Check if system tags should be filtered from user messages.
+
+        Returns:
+            True if system tags should be filtered.
+        """
+        value = os.getenv('WIKI_FILTER_SYSTEM_TAGS', 'true').lower()
+        return value in ('true', '1', 'yes', 'on')
+
 
 # Global configuration instance
 config = Config()

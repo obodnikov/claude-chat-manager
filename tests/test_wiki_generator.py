@@ -514,3 +514,78 @@ class TestWikiGenerator:
     # Note: Integration test for filtering is challenging to mock properly
     # The unit tests above (test_is_pointless_chat_*) thoroughly test the filtering logic
     # Manual/integration testing should be used to verify end-to-end filtering works
+
+    def test_strip_system_tags_ide_opened_file(self):
+        """Test stripping IDE opened file tags."""
+        wiki_gen = WikiGenerator()
+
+        text = "<ide_opened_file>The user opened file.py</ide_opened_file>\n\nActual user question here"
+        cleaned = wiki_gen._strip_system_tags(text)
+
+        assert "<ide_opened_file>" not in cleaned
+        assert "Actual user question here" in cleaned
+        assert "The user opened file.py" not in cleaned
+
+    def test_strip_system_tags_system_reminder(self):
+        """Test stripping system reminder tags."""
+        wiki_gen = WikiGenerator()
+
+        text = "My question\n\n<system-reminder>Note: This is a reminder</system-reminder>"
+        cleaned = wiki_gen._strip_system_tags(text)
+
+        assert "<system-reminder>" not in cleaned
+        assert "My question" in cleaned
+        assert "This is a reminder" not in cleaned
+
+    def test_strip_system_tags_multiple(self):
+        """Test stripping multiple system tags."""
+        wiki_gen = WikiGenerator()
+
+        text = "<ide_opened_file>Opened file</ide_opened_file>\n\nReal question\n\n<system-reminder>Reminder</system-reminder>"
+        cleaned = wiki_gen._strip_system_tags(text)
+
+        assert cleaned == "Real question"
+        assert "<ide_opened_file>" not in cleaned
+        assert "<system-reminder>" not in cleaned
+
+    def test_clean_user_message_pure_system(self):
+        """Test that pure system messages return None."""
+        wiki_gen = WikiGenerator()
+
+        text = "<ide_opened_file>The user opened the file /path/to/file.py in the IDE.</ide_opened_file>"
+        cleaned = wiki_gen._clean_user_message(text)
+
+        assert cleaned is None
+
+    def test_clean_user_message_mixed_content(self):
+        """Test that mixed content returns cleaned text."""
+        wiki_gen = WikiGenerator()
+
+        text = "<ide_opened_file>Opened file</ide_opened_file>\n\nHow do I fix this bug?"
+        cleaned = wiki_gen._clean_user_message(text)
+
+        assert cleaned == "How do I fix this bug?"
+        assert "<ide_opened_file>" not in cleaned
+
+    def test_clean_user_message_no_system_tags(self):
+        """Test that text without system tags is returned as-is."""
+        wiki_gen = WikiGenerator()
+
+        text = "This is a normal user question"
+        cleaned = wiki_gen._clean_user_message(text)
+
+        assert cleaned == text
+
+    @patch('src.wiki_generator.config')
+    def test_clean_user_message_filtering_disabled(self, mock_config):
+        """Test that filtering can be disabled."""
+        mock_config.wiki_filter_system_tags = False
+
+        wiki_gen = WikiGenerator()
+
+        text = "<ide_opened_file>Opened file</ide_opened_file>\n\nQuestion"
+        cleaned = wiki_gen._clean_user_message(text)
+
+        # Should return original text when filtering is disabled
+        assert cleaned == text
+        assert "<ide_opened_file>" in cleaned

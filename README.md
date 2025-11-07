@@ -229,6 +229,22 @@ WIKI_REQUIRE_CONTENT=false
 - 📝 **Word Count**: Very short conversations are excluded
 - 🔑 **Keyword Detection**: "Warmup", "test", etc. in brief first messages
 - 💻 **Content Requirement**: Optionally require code or file modifications
+- 🏷️ **System Tag Filtering**: Automatically removes `<ide_opened_file>`, `<system-reminder>`, and other system notifications from user messages
+
+**System Tag Filtering (NEW!):**
+
+The wiki generator now intelligently filters system notification tags from user messages:
+- **Pure system messages** (only tags, no user text) are completely skipped
+- **Mixed messages** (tags + user text) have tags stripped, keeping the actual user question
+- **Normal messages** without tags are preserved as-is
+
+Filtered system tags:
+- `<ide_opened_file>` - File opening notifications from IDE
+- `<system-reminder>` - System reminder messages
+- `<user-prompt-submit-hook>` - Hook execution messages
+- `<command-message>` - Command status messages
+
+This can be disabled by setting `WIKI_FILTER_SYSTEM_TAGS=false` in your `.env` file.
 
 After generation, the summary shows how many chats were filtered:
 ```
