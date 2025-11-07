@@ -267,14 +267,12 @@ class WikiGenerator:
                 # Get chat date
                 date_str = self._extract_chat_date(chat_data)
 
-                # Generate clean content
-                content = self._generate_chat_content(chat_data)
-
+                # Store chat data for content generation later (with section numbers)
                 chat_sections.append({
                     'title': title,
                     'date': date_str,
                     'chat_id': chat_id,
-                    'content': content,
+                    'chat_data': chat_data,  # Store raw data
                     'timestamp': self._extract_timestamp(chat_data)
                 })
 
@@ -412,19 +410,26 @@ class WikiGenerator:
 
         return ''.join(excerpt_parts)
 
-    def _generate_chat_content(self, chat_data: List[Dict[str, Any]]) -> str:
+    def _generate_chat_content(
+        self,
+        chat_data: List[Dict[str, Any]],
+        chat_section_num: int = 0
+    ) -> Tuple[str, List[str]]:
         """Generate clean wiki content from chat data.
 
         Filters out tool use/result noise, keeps only conversation.
 
         Args:
             chat_data: Parsed chat data.
+            chat_section_num: Section number for anchor generation.
 
         Returns:
-            Clean markdown content.
+            Tuple of (clean_markdown_content, list_of_user_questions).
         """
         content_parts = []
         files_modified = set()
+        user_questions = []
+        user_question_count = 0
 
         for entry in chat_data:
             message = entry.get('message', {})
@@ -445,8 +450,25 @@ class WikiGenerator:
 
             # Format based on role
             if role == 'user':
-                # User question as blockquote
+                user_question_count += 1
+
+                # Extract first line or truncate for TOC
+                first_line = text.split('\n')[0].strip()
+                if len(first_line) > 80:
+                    first_line = first_line[:77] + '...'
+
+                # Store user question for TOC
+                user_questions.append(first_line)
+
+                # Create anchor for this user question
+                anchor_id = f"chat{chat_section_num}-user-q{user_question_count}"
+
+                # Add visual separator and marker for user input
+                content_parts.append("---\n")
+                content_parts.append(f'<a id="{anchor_id}"></a>\n')
+                content_parts.append("👤 **USER:**\n")
                 content_parts.append(f"> {text}\n")
+
             elif role == 'assistant':
                 # Assistant response
                 content_parts.append(f"{text}\n")
@@ -456,7 +478,7 @@ class WikiGenerator:
                     files_list = ', '.join(f'`{f}`' for f in sorted(files))
                     content_parts.append(f"\n*Files: {files_list}*\n")
 
-        return '\n'.join(content_parts)
+        return '\n'.join(content_parts), user_questions
 
     def _extract_clean_content(self, content: Any) -> Tuple[str, List[str]]:
         """Extract clean text and file references from content.
@@ -588,11 +610,11 @@ class WikiGenerator:
         project_name: str,
         chat_sections: List[Dict[str, Any]]
     ) -> str:
-        """Build complete wiki document with TOC.
+        """Build complete wiki document with hierarchical TOC.
 
         Args:
             project_name: Project name.
-            chat_sections: List of chat section dicts.
+            chat_sections: List of chat section dicts with chat_data.
 
         Returns:
             Complete wiki markdown.
@@ -611,18 +633,49 @@ class WikiGenerator:
 
         lines.append("\n---\n")
 
-        # Table of Contents
-        lines.append("## 📑 Table of Contents\n")
+        # Generate content for each section to extract user questions
+        sections_with_content = []
         for i, section in enumerate(chat_sections, 1):
+            chat_data = section.get('chat_data', [])
+            content, user_questions = self._generate_chat_content(chat_data, i)
+
+            sections_with_content.append({
+                'section_num': i,
+                'title': section['title'],
+                'date': section['date'],
+                'chat_id': section['chat_id'],
+                'timestamp': section['timestamp'],
+                'content': content,
+                'user_questions': user_questions
+            })
+
+        # Table of Contents (Hierarchical with user questions)
+        lines.append("## 📑 Table of Contents\n")
+        for section in sections_with_content:
+            i = section['section_num']
             title = section['title']
             date = section['date']
+            chat_id = section['chat_id']
+            user_questions = section['user_questions']
+
             anchor = self._create_anchor(i, title)
-            lines.append(f"{i}. [{title}](#{anchor}) - *{date}*")
+            lines.append(f"### {i}. [{title}](#{anchor})")
+            lines.append(f"*{date} | Chat ID: {chat_id}*\n")
 
-        lines.append("\n---\n")
+            # Add user questions as sub-items if any
+            if user_questions:
+                lines.append("**Key Topics:**")
+                for q_num, question in enumerate(user_questions, 1):
+                    q_anchor = f"chat{i}-user-q{q_num}"
+                    lines.append(f"- 🗣️ [{question}](#{q_anchor})")
 
-        # Chat sections
-        for i, section in enumerate(chat_sections, 1):
+            lines.append("")  # Blank line after each section
+
+        lines.append("---\n")
+
+        # Chat sections with content
+        for section in sections_with_content:
+            i = section['section_num']
             title = section['title']
             date = section['date']
             chat_id = section['chat_id']
@@ -635,11 +688,11 @@ class WikiGenerator:
             lines.append(f"<!-- wiki-meta: chat_id={chat_id}, timestamp={timestamp} -->")
             lines.append(f"*Date: {date} | Chat ID: {chat_id}*\n")
 
-            # Content
+            # Content (already includes user markers and anchors)
             lines.append(content)
 
             # Separator between chats
-            if i < len(chat_sections):
+            if i < len(sections_with_content):
                 lines.append("\n---\n")
 
         return '\n'.join(lines)

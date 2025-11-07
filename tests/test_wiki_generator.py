@@ -160,10 +160,12 @@ class TestWikiGenerator:
         ]
 
         wiki_gen = WikiGenerator()
-        content = wiki_gen._generate_chat_content(mock_parse.return_value)
+        content, user_questions = wiki_gen._generate_chat_content(mock_parse.return_value, 1)
 
         assert 'What is the best way to add tests?' in content
         assert 'pytest' in content
+        assert len(user_questions) == 1
+        assert 'What is the best way to add tests?' in user_questions[0]
 
     def test_create_anchor(self):
         """Test anchor creation from title."""
@@ -180,12 +182,28 @@ class TestWikiGenerator:
         """Test complete wiki document building."""
         wiki_gen = WikiGenerator()
 
+        # Chat sections now need chat_data instead of content
         chat_sections = [
             {
                 'title': 'Test Chat',
                 'date': '2024-01-01',
                 'chat_id': 'abc12345',
-                'content': '> User question\n\nAssistant response',
+                'chat_data': [
+                    {
+                        'message': {
+                            'role': 'user',
+                            'content': 'User question'
+                        },
+                        'timestamp': 1234567890
+                    },
+                    {
+                        'message': {
+                            'role': 'assistant',
+                            'content': 'Assistant response'
+                        },
+                        'timestamp': 1234567891
+                    }
+                ],
                 'timestamp': 1234567890
             }
         ]
@@ -197,8 +215,10 @@ class TestWikiGenerator:
         assert '2024-01-01' in wiki
         assert 'User question' in wiki
         assert 'Assistant response' in wiki
-        # Should have table of contents
+        # Should have hierarchical table of contents
         assert 'Table of Contents' in wiki or 'Contents' in wiki
+        # Should have user marker
+        assert '👤 **USER:**' in wiki
 
     @patch('src.wiki_generator.config')
     @patch('src.wiki_generator.parse_jsonl_file')

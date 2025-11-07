@@ -246,10 +246,40 @@ After generation, the summary shows how many chats were filtered:
 - 📅 **Chronological**: Sorts conversations by date
 - 🧹 **Clean Content**: Filters out tool use/result noise for better readability
 - 🔍 **Smart Filtering**: Automatically excludes trivial warmup/test chats
-- 📝 **Table of Contents**: Auto-generated with anchor links
+- 📝 **Hierarchical Table of Contents**: Auto-generated with user questions as clickable sub-items
+- 👤 **Enhanced User Visibility**: User questions clearly marked with visual separators and emoji
+- 🔗 **Direct Navigation**: Jump directly to any user question from the TOC
 - 💻 **Syntax Highlighting**: Fenced code blocks with language detection
-- 🔗 **File References**: Preserves inline file references in italics
+- 📎 **File References**: Preserves inline file references in italics
 - 🔖 **Metadata Caching**: Hidden HTML comments store chat IDs and timestamps for updates
+
+**User Question Visibility (NEW!):**
+
+The wiki now makes user questions and feedback highly visible:
+- **Hierarchical TOC**: Each chat section lists user questions as sub-items with 🗣️ emoji
+- **Visual Markers**: User messages prefixed with `👤 **USER:**` and horizontal separators
+- **Direct Links**: Click on any user question in the TOC to jump directly to that point in the conversation
+
+Example TOC structure:
+```markdown
+### 1. Refactoring Python Script
+*Nov 04, 2025 | Chat ID: abc123*
+
+**Key Topics:**
+- 🗣️ Refactor code with all 7 points
+- 🗣️ CLI parameters still show menu (bug)
+- 🗣️ Update README with usage guide
+```
+
+Example content with user markers:
+```markdown
+---
+
+👤 **USER:**
+> When I run command with cli parameters it still give me access to menu
+
+You're absolutely right! Let me fix this...
+```
 
 **Setup for AI-Powered Titles:**
 
