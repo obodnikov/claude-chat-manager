@@ -2,7 +2,7 @@
 
 A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat files with an intuitive interface and Unix `less`-like paging for smooth reading experience.
 
-**Version 2.0** - Fully refactored with modular architecture, comprehensive testing, and professional code standards.
+**Version 2.2.0** - Enhanced book export with single-chat export, improved directory naming, and comprehensive filtering options.
 
 ## ✨ Features
 
@@ -336,10 +336,14 @@ When browsing interactively without `-o`, you can still export from the project 
 - **q**: Return to project menu
 
 ### Project Menu
-- **1-9**: View specific chat
+- **1-9**: Select chat (view or export) - Opens action menu with options:
+  - **1**: View in terminal
+  - **2**: Export to markdown
+  - **3**: Export to book format
+  - **4**: Cancel
 - **a**: View all chats sequentially
 - **e**: Export all chats to markdown
-- **eb**: Export all chats to book format (NEW!)
+- **eb**: Export all chats to book format
 - **b**: Back to main menu
 - **q**: Quit
 
@@ -532,6 +536,24 @@ Claude Desktop stores projects in:
 Each project contains `.jsonl` files representing individual chats.
 
 ## 🛠️ What's New
+
+### v2.2.0 - Single Chat Export & Directory Naming (November 2025)
+
+**New Features:**
+- 💾 **Single Chat Export**: Select individual chats for export via action menu
+  - Choose to view OR export after selecting a chat
+  - Supports both markdown and book formats
+  - Uses same intelligent filename generation as batch exports
+- 🏷️ **Improved Directory Naming**: Machine-hostname-based export directories
+  - Format: `MacBook-Air-Michael-Claude_Chat_Manager-book-20251109_103654`
+  - Clear machine identification for multi-system workflows
+- 🎯 **Enhanced UX**: Clearer menu options and workflow
+  - "Select chat (view or export)" - more descriptive menu text
+  - Action sub-menu for flexible workflows
+
+**Export Locations:**
+- **Batch exports**: Timestamped directories with hostname
+- **Single exports**: Current directory with descriptive filenames
 
 ### v2.1.0 - Book Mode Enhancements (November 2025)
 
@@ -798,15 +820,17 @@ This tool is provided as-is for personal use with Claude Desktop chat histories.
 
 ## 🎯 Project Stats
 
-- **Version**: 2.1.0
+- **Version**: 2.2.0
 - **Python**: 3.9+
-- **Modules**: 15 source modules (filters module added for shared logic)
+- **Modules**: 15 source modules
 - **Tests**: 73 unit tests (100% passing)
 - **Coverage**: Core modules 52-100%
 - **Type Hints**: 100% coverage
 - **Documentation**: Complete with examples and enhancement guide
 - **Features**: 5 export formats including:
   - Enhanced book mode with intelligent filtering
+  - Single-chat export with action menu
+  - Machine-hostname-based directory naming
   - AI-powered wiki with update/rebuild capabilities
   - Shared filtering architecture across modes
 

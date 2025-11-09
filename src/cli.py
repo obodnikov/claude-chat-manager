@@ -24,7 +24,8 @@ from .parser import parse_jsonl_file, count_messages_in_file
 from .exporters import (
     export_chat_pretty,
     export_chat_to_file,
-    export_project_chats
+    export_project_chats,
+    export_single_chat
 )
 from .display import display_with_pager
 from .formatters import clean_project_name, sanitize_for_filename
@@ -214,7 +215,7 @@ def browse_project_interactive(project_path: Path) -> bool:
 
         print()
         print_colored("Choose an option:", Colors.YELLOW)
-        print(f"  1-{len(chat_files)}) View specific chat")
+        print(f"  1-{len(chat_files)}) Select chat (view or export)")
         print("  a) View all chats")
         print("  e) Export all to markdown")
         print("  eb) Export all to book format")
@@ -267,11 +268,60 @@ def browse_project_interactive(project_path: Path) -> bool:
             elif choice.isdigit():
                 choice_num = int(choice)
                 if 1 <= choice_num <= len(chat_files):
-                    view_chat_file(chat_files[choice_num - 1])
+                    selected_file = chat_files[choice_num - 1]
+
+                    # Show action menu
                     print()
-                    input("Press Enter to continue...")
+                    print_colored(f"Selected: {selected_file.name}", Colors.CYAN)
                     print()
-                    display_menu()
+                    print_colored("What would you like to do?", Colors.YELLOW)
+                    print("  1) View in terminal")
+                    print("  2) Export to markdown")
+                    print("  3) Export to book format")
+                    print("  4) Cancel (back to chat list)")
+                    print()
+
+                    action_choice = input("Enter choice: ").strip()
+
+                    if action_choice == '1':
+                        # View chat
+                        view_chat_file(selected_file)
+                        print()
+                        input("Press Enter to continue...")
+                        print()
+                        display_menu()
+                    elif action_choice == '2':
+                        # Export to markdown
+                        try:
+                            output_file = export_single_chat(selected_file, 'markdown')
+                            size = output_file.stat().st_size
+                            print_colored(f"✅ Exported to: {output_file} ({size/1024:.1f}KB)", Colors.GREEN)
+                        except Exception as e:
+                            print_colored(f"❌ Export failed: {e}", Colors.RED)
+                        print()
+                        input("Press Enter to continue...")
+                        print()
+                        display_menu()
+                    elif action_choice == '3':
+                        # Export to book format
+                        try:
+                            output_file = export_single_chat(selected_file, 'book')
+                            size = output_file.stat().st_size
+                            print_colored(f"✅ Exported to: {output_file} ({size/1024:.1f}KB)", Colors.GREEN)
+                        except Exception as e:
+                            print_colored(f"❌ Export failed: {e}", Colors.RED)
+                        print()
+                        input("Press Enter to continue...")
+                        print()
+                        display_menu()
+                    elif action_choice == '4':
+                        # Cancel - redisplay menu
+                        print()
+                        display_menu()
+                    else:
+                        print_colored("Invalid choice", Colors.RED)
+                        print()
+                        display_menu()
                 else:
                     print_colored(f"Invalid selection. Please choose 1-{len(chat_files)}", Colors.RED)
             else:

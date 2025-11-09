@@ -513,6 +513,80 @@ def _generate_book_filename(
     return sanitized if sanitized else f"chat-{chat_file.stem[:8]}"
 
 
+def export_single_chat(
+    chat_file: Path,
+    format_type: str = 'markdown',
+    output_dir: Optional[Path] = None,
+    api_key: Optional[str] = None
+) -> Path:
+    """Export a single chat file to markdown or book format.
+
+    Generates descriptive filename for book format using same logic as batch export.
+    Saves to current directory by default or specified output directory.
+
+    Args:
+        chat_file: Path to the chat JSONL file to export.
+        format_type: Export format ('markdown' or 'book').
+        output_dir: Optional output directory (defaults to current directory).
+        api_key: Optional OpenRouter API key for LLM title generation.
+
+    Returns:
+        Path to the exported file.
+
+    Raises:
+        ExportError: If export operation fails.
+    """
+    try:
+        # Default to current directory
+        if output_dir is None:
+            output_dir = Path.cwd()
+        else:
+            os.makedirs(output_dir, exist_ok=True)
+
+        # Parse chat data for filename generation
+        chat_data = parse_jsonl_file(chat_file)
+
+        # Generate filename
+        if format_type == 'book' and config.book_generate_titles:
+            # Initialize LLM client if needed
+            llm_client = None
+            if config.book_use_llm_titles:
+                effective_api_key = api_key or config.openrouter_api_key
+                if effective_api_key:
+                    try:
+                        from .llm_client import OpenRouterClient
+                        llm_client = OpenRouterClient(api_key=effective_api_key)
+                        logger.debug("Using LLM for single chat title generation")
+                    except Exception as e:
+                        logger.warning(f"Failed to initialize LLM client: {e}")
+
+            # Initialize chat filter for text extraction
+            chat_filter = ChatFilter(
+                skip_trivial=False,
+                filter_system_tags=config.book_filter_system_tags
+            )
+
+            filename = _generate_book_filename(
+                chat_data,
+                chat_file,
+                llm_client,
+                chat_filter
+            )
+        else:
+            filename = chat_file.stem
+
+        output_file = output_dir / f"{filename}.md"
+
+        # Export the file
+        export_chat_to_file(chat_file, output_file, format_type)
+
+        logger.info(f"Exported single chat to {output_file}")
+        return output_file
+
+    except Exception as e:
+        raise ExportError(f"Failed to export single chat: {e}")
+
+
 def export_project_wiki(
     project_path: Path,
     output_file: Path,
