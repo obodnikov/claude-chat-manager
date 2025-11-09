@@ -14,6 +14,8 @@ from .parser import parse_jsonl_file, extract_chat_messages
 from .formatters import format_content, format_tool_result, format_timestamp, clean_project_name
 from .colors import Colors, get_role_color, print_colored
 from .exceptions import ExportError
+from .filters import ChatFilter
+from .config import config
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +152,12 @@ def export_chat_markdown(chat_data: List[Dict[str, Any]]) -> str:
 def export_chat_book(chat_data: List[Dict[str, Any]]) -> str:
     """Export chat in clean book format without timestamps.
 
+    Applies enhanced filtering based on configuration:
+    - Filters out system tags from user messages
+    - Removes tool use/result noise
+    - Shows file references (optional)
+    - Enhanced user message highlighting
+
     Args:
         chat_data: Parsed JSONL chat data.
 
@@ -158,7 +166,13 @@ def export_chat_book(chat_data: List[Dict[str, Any]]) -> str:
     """
     output_lines = []
     output_lines.append('# Claude Chat Export\n')
-    output_lines.append(f'**Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}**\n')
+    output_lines.append(f'**Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}**\n\n')
+
+    # Initialize chat filter with book-specific config
+    chat_filter = ChatFilter(
+        skip_trivial=False,  # Don't filter entire chats here, done earlier
+        filter_system_tags=config.book_filter_system_tags
+    )
 
     for entry in chat_data:
         message = entry.get('message', {})
@@ -167,24 +181,45 @@ def export_chat_book(chat_data: List[Dict[str, Any]]) -> str:
 
         role = message.get('role', entry.get('type', 'unknown'))
         content = message.get('content', '')
-        tool_result = entry.get('toolUseResult')
 
-        formatted_content = format_content(content, role)
-
-        if tool_result:
-            tool_output = format_tool_result(tool_result, role)
-            if tool_output:
-                formatted_content += tool_output
-
-        if not formatted_content or formatted_content.strip() in ['[Empty unknown message]', '[No content in unknown message]']:
+        # Skip system messages
+        if role not in ('user', 'assistant'):
             continue
 
+        # Extract clean content (filter tool noise if configured)
+        if config.book_filter_tool_noise:
+            text, files = chat_filter.extract_clean_content(content, include_tool_use=False)
+        else:
+            # Use standard formatting if tool noise filtering is disabled
+            text = format_content(content, role)
+            files = []
+
+        # For user messages, clean system tags
         if role == 'user':
-            # User question in callout style
-            output_lines.append(f'> {formatted_content}\n\n')
+            if config.book_filter_system_tags:
+                text = chat_filter.clean_user_message(text)
+                # Skip if message was purely system notification
+                if not text:
+                    continue
+
+            # Enhanced user message formatting with visual separator
+            output_lines.append('---\n\n')
+            output_lines.append('👤 **USER:**\n')
+            output_lines.append(f'> {text}\n\n')
+
         elif role == 'assistant':
+            if not text or not text.strip():
+                continue
+
             # Assistant response without headers
-            output_lines.append(f'{formatted_content}\n\n')
+            output_lines.append(f'{text}\n')
+
+            # Add file references if enabled and files were modified
+            if config.book_show_file_refs and files:
+                files_list = ', '.join(f'`{f}`' for f in sorted(set(files)))
+                output_lines.append(f'\n*Files: {files_list}*\n')
+
+            output_lines.append('\n')
 
     return ''.join(output_lines)
 
@@ -231,14 +266,21 @@ def export_chat_to_file(
 def export_project_chats(
     project_path: Path,
     export_dir: Path,
-    format_type: str = 'markdown'
+    format_type: str = 'markdown',
+    api_key: Optional[str] = None
 ) -> List[Path]:
     """Export all chats in a project to a directory.
+
+    For book format, applies enhanced features:
+    - Filters out trivial/empty chats (configurable)
+    - Generates descriptive filenames (configurable)
+    - Applies content cleaning and filtering
 
     Args:
         project_path: Path to the project directory.
         export_dir: Directory where to save exports.
         format_type: Export format (markdown, book).
+        api_key: OpenRouter API key for LLM title generation (optional).
 
     Returns:
         List of exported file paths.
@@ -252,19 +294,223 @@ def export_project_chats(
 
         chat_files = list(project_path.glob('*.jsonl'))
         exported_files = []
+        filtered_count = 0
+
+        # Initialize filter for book format if needed
+        chat_filter = None
+        if format_type == 'book' and config.book_skip_trivial:
+            chat_filter = ChatFilter(
+                skip_trivial=config.book_skip_trivial,
+                min_messages=config.book_min_messages,
+                min_words=config.book_min_words,
+                skip_keywords=config.book_skip_keywords,
+                filter_system_tags=config.book_filter_system_tags
+            )
+
+        # Initialize LLM client for title generation if needed
+        llm_client = None
+        if format_type == 'book' and config.book_generate_titles and config.book_use_llm_titles:
+            # Use provided API key or fall back to config
+            effective_api_key = api_key or config.openrouter_api_key
+            if effective_api_key:
+                try:
+                    from .llm_client import OpenRouterClient
+                    llm_client = OpenRouterClient(api_key=effective_api_key)
+                    logger.info("Using LLM for title generation in book export")
+                except Exception as e:
+                    logger.warning(f"Failed to initialize LLM client: {e}")
+                    logger.info("Falling back to first user question for titles")
+            else:
+                logger.info("No API key available, using first user question for titles")
 
         for chat_file in chat_files:
-            chat_name = chat_file.stem
-            export_file = export_dir / f"{chat_name}.md"
+            # Parse chat data for filtering and title generation
+            chat_data = parse_jsonl_file(chat_file)
+
+            # Filter trivial chats for book format
+            if chat_filter and chat_filter.is_pointless_chat(chat_data):
+                logger.info(f"Filtering out trivial chat: {chat_file.name}")
+                filtered_count += 1
+                continue
+
+            # Generate filename
+            if format_type == 'book' and config.book_generate_titles:
+                filename = _generate_book_filename(
+                    chat_data,
+                    chat_file,
+                    llm_client,
+                    chat_filter
+                )
+            else:
+                filename = chat_file.stem
+
+            export_file = export_dir / f"{filename}.md"
 
             export_chat_to_file(chat_file, export_file, format_type)
             exported_files.append(export_file)
 
         logger.info(f"Exported {len(exported_files)} chats to {export_dir}")
+        if filtered_count > 0:
+            logger.info(f"Filtered out {filtered_count} trivial chats")
+
         return exported_files
 
     except Exception as e:
         raise ExportError(f"Failed to export project chats: {e}")
+
+
+def _extract_chat_date_simple(chat_data: List[Dict[str, Any]]) -> Optional[str]:
+    """Extract date from first message in chat for filename.
+
+    Args:
+        chat_data: Parsed chat data.
+
+    Returns:
+        Date string in YYYY-MM-DD format or None if not available.
+    """
+    if not chat_data:
+        return None
+
+    first_entry = chat_data[0]
+    timestamp = first_entry.get('timestamp')
+
+    if not timestamp:
+        return None
+
+    try:
+        from datetime import datetime
+
+        if isinstance(timestamp, str):
+            # Parse ISO format (like 2025-09-20T12:28:46.794Z)
+            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        elif isinstance(timestamp, (int, float)):
+            # Handle both seconds and milliseconds timestamps
+            if timestamp > 10000000000:  # Milliseconds
+                dt = datetime.fromtimestamp(timestamp / 1000)
+            else:  # Seconds
+                dt = datetime.fromtimestamp(timestamp)
+        else:
+            return None
+
+        return dt.strftime('%Y-%m-%d')
+
+    except Exception as e:
+        logger.debug(f"Failed to extract date from timestamp: {e}")
+        return None
+
+
+def _generate_book_filename(
+    chat_data: List[Dict[str, Any]],
+    chat_file: Path,
+    llm_client: Optional[Any],
+    chat_filter: Optional[ChatFilter]
+) -> str:
+    """Generate descriptive filename for book export.
+
+    Generates filename in format: topic-name-2025-11-09
+    If date extraction fails, uses: topic-name
+
+    Args:
+        chat_data: Parsed chat data.
+        chat_file: Original chat file path.
+        llm_client: Optional LLM client for title generation.
+        chat_filter: Optional chat filter for text extraction.
+
+    Returns:
+        Sanitized filename (without extension).
+    """
+    title = None
+
+    # Try LLM generation if available
+    if llm_client:
+        try:
+            # Extract conversation excerpt for title generation
+            excerpt_parts = []
+            total_chars = 0
+            max_chars = 2000 * 4  # Approximate 2000 tokens
+
+            for entry in chat_data[:20]:  # First 20 messages
+                message = entry.get('message', {})
+                role = message.get('role', '')
+                content = message.get('content', '')
+
+                if role not in ('user', 'assistant'):
+                    continue
+
+                # Extract text
+                if chat_filter:
+                    text = chat_filter.extract_text_only(content)
+                else:
+                    text = str(content)
+
+                if not text:
+                    continue
+
+                prefix = "User: " if role == 'user' else "Assistant: "
+                message_text = f"{prefix}{text}\n\n"
+
+                if total_chars + len(message_text) > max_chars:
+                    break
+
+                excerpt_parts.append(message_text)
+                total_chars += len(message_text)
+
+            excerpt = ''.join(excerpt_parts)
+
+            if excerpt:
+                title = llm_client.generate_chat_title(excerpt, max_words=10)
+                logger.debug(f"Generated LLM title: {title}")
+
+        except Exception as e:
+            logger.warning(f"LLM title generation failed: {e}")
+
+    # Fallback: Use first user question
+    if not title:
+        for entry in chat_data:
+            message = entry.get('message', {})
+            role = message.get('role', '')
+            content = message.get('content', '')
+
+            if role == 'user':
+                # Extract text
+                if chat_filter:
+                    text = chat_filter.extract_text_only(content)
+                else:
+                    text = str(content)
+
+                if text:
+                    # Use first line or first 60 chars
+                    first_line = text.split('\n')[0]
+                    title = first_line[:60].strip()
+                    if len(first_line) > 60:
+                        title += "..."
+                    break
+
+    # Last resort: use filename
+    if not title:
+        title = f"chat-{chat_file.stem[:8]}"
+
+    # Sanitize filename (remove special chars, limit length)
+    # Keep alphanumeric, spaces, hyphens, underscores
+    import re
+    sanitized = re.sub(r'[^\w\s-]', '', title)
+    sanitized = re.sub(r'[-\s]+', '-', sanitized)
+    sanitized = sanitized.strip('-_')
+
+    # Limit to 100 chars for filesystem compatibility (leaving room for date)
+    if len(sanitized) > 89:  # 100 - 11 chars for date (-YYYY-MM-DD)
+        sanitized = sanitized[:89].rstrip('-_')
+
+    # Make lowercase for consistency
+    sanitized = sanitized.lower()
+
+    # Append date if available and configured
+    if config.book_include_date:
+        chat_date = _extract_chat_date_simple(chat_data)
+        if chat_date:
+            sanitized = f"{sanitized}-{chat_date}"
+
+    return sanitized if sanitized else f"chat-{chat_file.stem[:8]}"
 
 
 def export_project_wiki(

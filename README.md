@@ -229,6 +229,22 @@ WIKI_REQUIRE_CONTENT=false
 - 📝 **Word Count**: Very short conversations are excluded
 - 🔑 **Keyword Detection**: "Warmup", "test", etc. in brief first messages
 - 💻 **Content Requirement**: Optionally require code or file modifications
+- 🏷️ **System Tag Filtering**: Automatically removes `<ide_opened_file>`, `<system-reminder>`, and other system notifications from user messages
+
+**System Tag Filtering (NEW!):**
+
+The wiki generator now intelligently filters system notification tags from user messages:
+- **Pure system messages** (only tags, no user text) are completely skipped
+- **Mixed messages** (tags + user text) have tags stripped, keeping the actual user question
+- **Normal messages** without tags are preserved as-is
+
+Filtered system tags:
+- `<ide_opened_file>` - File opening notifications from IDE
+- `<system-reminder>` - System reminder messages
+- `<user-prompt-submit-hook>` - Hook execution messages
+- `<command-message>` - Command status messages
+
+This can be disabled by setting `WIKI_FILTER_SYSTEM_TAGS=false` in your `.env` file.
 
 After generation, the summary shows how many chats were filtered:
 ```
@@ -246,10 +262,40 @@ After generation, the summary shows how many chats were filtered:
 - 📅 **Chronological**: Sorts conversations by date
 - 🧹 **Clean Content**: Filters out tool use/result noise for better readability
 - 🔍 **Smart Filtering**: Automatically excludes trivial warmup/test chats
-- 📝 **Table of Contents**: Auto-generated with anchor links
+- 📝 **Hierarchical Table of Contents**: Auto-generated with user questions as clickable sub-items
+- 👤 **Enhanced User Visibility**: User questions clearly marked with visual separators and emoji
+- 🔗 **Direct Navigation**: Jump directly to any user question from the TOC
 - 💻 **Syntax Highlighting**: Fenced code blocks with language detection
-- 🔗 **File References**: Preserves inline file references in italics
+- 📎 **File References**: Preserves inline file references in italics
 - 🔖 **Metadata Caching**: Hidden HTML comments store chat IDs and timestamps for updates
+
+**User Question Visibility (NEW!):**
+
+The wiki now makes user questions and feedback highly visible:
+- **Hierarchical TOC**: Each chat section lists user questions as sub-items with 🗣️ emoji
+- **Visual Markers**: User messages prefixed with `👤 **USER:**` and horizontal separators
+- **Direct Links**: Click on any user question in the TOC to jump directly to that point in the conversation
+
+Example TOC structure:
+```markdown
+### 1. Refactoring Python Script
+*Nov 04, 2025 | Chat ID: abc123*
+
+**Key Topics:**
+- 🗣️ Refactor code with all 7 points
+- 🗣️ CLI parameters still show menu (bug)
+- 🗣️ Update README with usage guide
+```
+
+Example content with user markers:
+```markdown
+---
+
+👤 **USER:**
+> When I run command with cli parameters it still give me access to menu
+
+You're absolutely right! Let me fix this...
+```
 
 **Setup for AI-Powered Titles:**
 
@@ -375,25 +421,56 @@ Features:
 - **Fenced Code Blocks**: Proper syntax highlighting with language detection
 - **Fallback Titles**: Uses first user question if LLM unavailable
 
-### Book Format (Clean & Readable)
+### Book Format (Clean & Readable - Enhanced!)
+
+**NEW in v2.1:** Book mode now includes intelligent filtering and cleaning features inspired by wiki mode!
+
+**Enhanced Features:**
+- ✨ **Trivial Chat Filtering**: Automatically skips low-value conversations (warmup, tests, etc.)
+- 🎯 **Smart Filenames**: Generates descriptive names from content instead of UUIDs
+- 🧹 **System Tag Cleaning**: Removes IDE notifications and system messages
+- 🔇 **Tool Noise Removal**: Filters out technical tool execution details
+- 👤 **Enhanced User Highlighting**: Clear visual separators and USER markers
+- 📎 **File Reference Tracking**: Clean file lists without tool noise
+- 💻 **Code Block Preservation**: Maintains proper markdown formatting
+
 ```markdown
 # Claude Chat Export
 
-**Generated: 2025-09-21 12:25:52**
+**Generated: 2025-11-09 10:30:00**
 
+---
+
+👤 **USER:**
 > should i include package-lock file in .gitignore
 
 I'll check your current .gitignore file to see what's already included and provide guidance on package-lock.json.
 
-🔧 [Tool Use: Read]
-   File: /home/mike/src/pollen-local-api/.gitignore
-
 For Node.js projects, the decision about package-lock.json in .gitignore depends on your project type...
 
+*Files: .gitignore*
+
+---
+
+👤 **USER:**
 > what about yarn.lock?
 
 For yarn.lock, the recommendation is different from package-lock.json...
 ```
+
+**Configuration** (all optional, enabled by default):
+```bash
+# .env
+BOOK_SKIP_TRIVIAL=true              # Filter out trivial chats
+BOOK_GENERATE_TITLES=true           # Generate descriptive filenames
+BOOK_USE_LLM_TITLES=false          # Use AI for titles (requires API key)
+BOOK_FILTER_SYSTEM_TAGS=true       # Remove system notifications
+BOOK_FILTER_TOOL_NOISE=true        # Remove tool execution details
+BOOK_SHOW_FILE_REFS=true           # Show modified files
+BOOK_INCLUDE_DATE=true             # Append date to filenames (YYYY-MM-DD)
+```
+
+See [docs/BOOK_MODE_ENHANCEMENTS.md](docs/BOOK_MODE_ENHANCEMENTS.md) for complete details.
 
 ### Markdown Format (Standard)
 ```markdown
@@ -433,12 +510,12 @@ Export entire projects to organized files:
 # 'e' for standard markdown export
 # 'eb' for clean book format export
 
-# Creates directories like:
-# ProjectName_export_20250921_103000/
-# ProjectName_book_export_20250921_103000/
-#   ├── chat-session-1.md
-#   ├── mobile-fixes.md
-#   └── api-optimization.md
+# Creates directories with machine hostname and timestamp:
+# MacBook-Air-Michael-Claude_Chat_Manager-markdown-20251109_103654/
+# MacBook-Air-Michael-Claude_Chat_Manager-book-20251109_103654/
+#   ├── implementing-authentication-2025-11-09.md
+#   ├── fixing-database-queries-2025-11-08.md
+#   └── adding-user-roles-2025-11-07.md
 ```
 
 ### Search Features
@@ -456,12 +533,38 @@ Each project contains `.jsonl` files representing individual chats.
 
 ## 🛠️ What's New
 
-### Book Format Features
+### v2.1.0 - Book Mode Enhancements (November 2025)
+
+**Major Improvements:**
+- 🎯 **Intelligent Filtering**: Automatically filters trivial/warmup chats
+- 📝 **Smart Filenames**: Generates descriptive names from conversation topics
+- 🧹 **Content Cleaning**: Removes system tags and tool execution noise
+- 👤 **Better User Visibility**: Enhanced highlighting with visual separators
+- 📎 **File Tracking**: Clean references to modified files
+- 🔄 **Shared Architecture**: Unified filtering logic between wiki and book modes
+
+**Configuration:**
+- All features configurable via `.env` file
+- Sensible defaults (enabled by default)
+- Optional LLM-powered title generation
+- Backward compatible with previous versions
+
+See [docs/BOOK_MODE_ENHANCEMENTS.md](docs/BOOK_MODE_ENHANCEMENTS.md) for complete documentation.
+
+### v2.0.0 - Previous Features
+
+**Book Format Features:**
 - **Clean presentation**: Removes timestamps and message numbers for distraction-free reading
-- **Simple user questions**: Questions appear as simple blockquotes (`> question text`)
+- **Simple user questions**: Questions appear as blockquotes with USER markers
 - **Direct responses**: Assistant answers without headers or metadata
 - **Perfect for sharing**: Creates clean, readable documents ideal for documentation or reference
 - **Batch export**: Use `eb` command in project browser for bulk book format export
+
+**Wiki Format Features:**
+- AI-powered single-page wiki generation
+- Smart merge and rebuild functionality for updates
+- Hierarchical table of contents with user questions
+- Automatic trivial chat filtering
 
 ### Enhanced Header
 - Bold formatting for generation timestamp
@@ -636,12 +739,14 @@ The wiki feature transforms your entire project history into a single, well-orga
 
 ## 🆕 Book Format Use Cases
 
-The book format is perfect for:
-- **📚 Documentation**: Create clean reference materials from conversations
-- **📤 Sharing**: Export conversations in a professional, readable format
-- **📝 Tutorials**: Convert technical discussions into tutorial-style documents
-- **🎯 Focus**: Read conversations without timestamp and metadata distractions
+The enhanced book format is perfect for:
+- **📚 Documentation**: Create clean reference materials with auto-generated descriptive filenames
+- **📤 Sharing**: Export conversations in a professional format, filtered for quality
+- **📝 Tutorials**: Convert technical discussions into tutorial-style documents without tool noise
+- **🎯 Focus**: Read conversations without timestamps, metadata, or system notifications
 - **📖 Archiving**: Store important conversations in a clean, timeless format
+- **🔍 Quality Control**: Automatically filter out trivial warmup/test conversations
+- **🏢 Professional Use**: Generate client-ready documentation from development chats
 
 ## 🤝 Contributing
 
@@ -693,17 +798,20 @@ This tool is provided as-is for personal use with Claude Desktop chat histories.
 
 ## 🎯 Project Stats
 
-- **Version**: 2.0.0
+- **Version**: 2.1.0
 - **Python**: 3.9+
-- **Modules**: 14 source modules (wiki_parser added)
+- **Modules**: 15 source modules (filters module added for shared logic)
 - **Tests**: 73 unit tests (100% passing)
 - **Coverage**: Core modules 52-100%
 - **Type Hints**: 100% coverage
-- **Documentation**: Complete with examples
-- **Features**: 5 export formats including AI-powered wiki with update/rebuild capabilities
+- **Documentation**: Complete with examples and enhancement guide
+- **Features**: 5 export formats including:
+  - Enhanced book mode with intelligent filtering
+  - AI-powered wiki with update/rebuild capabilities
+  - Shared filtering architecture across modes
 
 ---
 
 **Made with ❤️ for the Claude community**
 
-*Version 2.0 - Production-ready with professional code standards!*
+*Version 2.1 - Enhanced book mode with intelligent filtering!*

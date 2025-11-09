@@ -201,6 +201,45 @@ def format_tool_result(tool_result: Any, role: str) -> str:
     return f'\n⚙️ [Tool Result]: {str(tool_result)[:100]}...'
 
 
+def sanitize_for_filename(name: str) -> str:
+    """Sanitize name for use in filename/directory.
+
+    Converts spaces to hyphens, removes special characters, and normalizes format.
+    Useful for creating clean directory names from hostnames or project names.
+
+    Args:
+        name: Original name (may contain spaces, special chars, dots).
+
+    Returns:
+        Sanitized name with hyphens instead of spaces, safe for filenames.
+
+    Example:
+        >>> sanitize_for_filename('MacBook Air.local')
+        'MacBook-Air'
+        >>> sanitize_for_filename('My Project Name')
+        'My-Project-Name'
+    """
+    import re
+
+    # Remove .local suffix if present (common in hostnames)
+    if name.endswith('.local'):
+        name = name[:-6]
+
+    # Replace spaces and underscores with hyphens
+    sanitized = name.replace(' ', '-').replace('_', '-')
+
+    # Remove dots and other special characters except hyphens
+    sanitized = re.sub(r'[^\w-]', '', sanitized)
+
+    # Remove consecutive hyphens
+    sanitized = re.sub(r'-+', '-', sanitized)
+
+    # Remove leading/trailing hyphens
+    sanitized = sanitized.strip('-')
+
+    return sanitized
+
+
 def clean_project_name(name: str) -> str:
     """Clean project name by removing leading dash and making it readable.
 

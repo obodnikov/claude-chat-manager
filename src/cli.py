@@ -4,6 +4,7 @@ This module handles the interactive browser and command-line operations.
 """
 
 import os
+import socket
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -26,10 +27,37 @@ from .exporters import (
     export_project_chats
 )
 from .display import display_with_pager
-from .formatters import clean_project_name
+from .formatters import clean_project_name, sanitize_for_filename
 from .exceptions import ProjectNotFoundError, ChatFileNotFoundError
 
 logger = logging.getLogger(__name__)
+
+
+def get_export_dirname(export_type: str) -> str:
+    """Generate export directory name with machine hostname.
+
+    Creates directory names in format:
+        hostname-Claude_Chat_Manager-type-YYYYMMDD_HHMMSS
+
+    Examples:
+        MacBook-Air-Michael-Claude_Chat_Manager-book-20251109_103654
+        MacBook-Air-Michael-Claude_Chat_Manager-markdown-20251109_103654
+
+    Args:
+        export_type: Type of export ('book' or 'markdown').
+
+    Returns:
+        Directory name string.
+    """
+    # Get and sanitize hostname
+    hostname = socket.gethostname()
+    hostname = sanitize_for_filename(hostname)
+
+    # Generate timestamp
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+    # Combine components
+    return f"{hostname}-Claude_Chat_Manager-{export_type}-{timestamp}"
 
 
 def display_projects_list() -> None:
@@ -215,7 +243,7 @@ def browse_project_interactive(project_path: Path) -> bool:
                         break
                 return True
             elif choice.lower() == 'e':
-                export_dir = Path(f"{project_name}_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+                export_dir = Path(get_export_dirname('markdown'))
                 print_colored(f"📤 Exporting all chats to markdown in: {export_dir}", Colors.BLUE)
 
                 exported_files = export_project_chats(project_path, export_dir, 'markdown')
@@ -226,7 +254,7 @@ def browse_project_interactive(project_path: Path) -> bool:
                     print(f"   {file.name} ({size/1024:.1f}KB)")
                 return True
             elif choice.lower() == 'eb':
-                export_dir = Path(f"{project_name}_book_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+                export_dir = Path(get_export_dirname('book'))
                 print_colored(f"📚 Exporting all chats to book format in: {export_dir}", Colors.BLUE)
 
                 exported_files = export_project_chats(project_path, export_dir, 'book')

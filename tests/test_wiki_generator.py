@@ -160,10 +160,12 @@ class TestWikiGenerator:
         ]
 
         wiki_gen = WikiGenerator()
-        content = wiki_gen._generate_chat_content(mock_parse.return_value)
+        content, user_questions = wiki_gen._generate_chat_content(mock_parse.return_value, 1)
 
         assert 'What is the best way to add tests?' in content
         assert 'pytest' in content
+        assert len(user_questions) == 1
+        assert 'What is the best way to add tests?' in user_questions[0]
 
     def test_create_anchor(self):
         """Test anchor creation from title."""
@@ -180,12 +182,28 @@ class TestWikiGenerator:
         """Test complete wiki document building."""
         wiki_gen = WikiGenerator()
 
+        # Chat sections now need chat_data instead of content
         chat_sections = [
             {
                 'title': 'Test Chat',
                 'date': '2024-01-01',
                 'chat_id': 'abc12345',
-                'content': '> User question\n\nAssistant response',
+                'chat_data': [
+                    {
+                        'message': {
+                            'role': 'user',
+                            'content': 'User question'
+                        },
+                        'timestamp': 1234567890
+                    },
+                    {
+                        'message': {
+                            'role': 'assistant',
+                            'content': 'Assistant response'
+                        },
+                        'timestamp': 1234567891
+                    }
+                ],
                 'timestamp': 1234567890
             }
         ]
@@ -197,8 +215,10 @@ class TestWikiGenerator:
         assert '2024-01-01' in wiki
         assert 'User question' in wiki
         assert 'Assistant response' in wiki
-        # Should have table of contents
+        # Should have hierarchical table of contents
         assert 'Table of Contents' in wiki or 'Contents' in wiki
+        # Should have user marker
+        assert '👤 **USER:**' in wiki
 
     @patch('src.wiki_generator.config')
     @patch('src.wiki_generator.parse_jsonl_file')
@@ -494,3 +514,78 @@ class TestWikiGenerator:
     # Note: Integration test for filtering is challenging to mock properly
     # The unit tests above (test_is_pointless_chat_*) thoroughly test the filtering logic
     # Manual/integration testing should be used to verify end-to-end filtering works
+
+    def test_strip_system_tags_ide_opened_file(self):
+        """Test stripping IDE opened file tags."""
+        wiki_gen = WikiGenerator()
+
+        text = "<ide_opened_file>The user opened file.py</ide_opened_file>\n\nActual user question here"
+        cleaned = wiki_gen._strip_system_tags(text)
+
+        assert "<ide_opened_file>" not in cleaned
+        assert "Actual user question here" in cleaned
+        assert "The user opened file.py" not in cleaned
+
+    def test_strip_system_tags_system_reminder(self):
+        """Test stripping system reminder tags."""
+        wiki_gen = WikiGenerator()
+
+        text = "My question\n\n<system-reminder>Note: This is a reminder</system-reminder>"
+        cleaned = wiki_gen._strip_system_tags(text)
+
+        assert "<system-reminder>" not in cleaned
+        assert "My question" in cleaned
+        assert "This is a reminder" not in cleaned
+
+    def test_strip_system_tags_multiple(self):
+        """Test stripping multiple system tags."""
+        wiki_gen = WikiGenerator()
+
+        text = "<ide_opened_file>Opened file</ide_opened_file>\n\nReal question\n\n<system-reminder>Reminder</system-reminder>"
+        cleaned = wiki_gen._strip_system_tags(text)
+
+        assert cleaned == "Real question"
+        assert "<ide_opened_file>" not in cleaned
+        assert "<system-reminder>" not in cleaned
+
+    def test_clean_user_message_pure_system(self):
+        """Test that pure system messages return None."""
+        wiki_gen = WikiGenerator()
+
+        text = "<ide_opened_file>The user opened the file /path/to/file.py in the IDE.</ide_opened_file>"
+        cleaned = wiki_gen._clean_user_message(text)
+
+        assert cleaned is None
+
+    def test_clean_user_message_mixed_content(self):
+        """Test that mixed content returns cleaned text."""
+        wiki_gen = WikiGenerator()
+
+        text = "<ide_opened_file>Opened file</ide_opened_file>\n\nHow do I fix this bug?"
+        cleaned = wiki_gen._clean_user_message(text)
+
+        assert cleaned == "How do I fix this bug?"
+        assert "<ide_opened_file>" not in cleaned
+
+    def test_clean_user_message_no_system_tags(self):
+        """Test that text without system tags is returned as-is."""
+        wiki_gen = WikiGenerator()
+
+        text = "This is a normal user question"
+        cleaned = wiki_gen._clean_user_message(text)
+
+        assert cleaned == text
+
+    @patch('src.wiki_generator.config')
+    def test_clean_user_message_filtering_disabled(self, mock_config):
+        """Test that filtering can be disabled."""
+        mock_config.wiki_filter_system_tags = False
+
+        wiki_gen = WikiGenerator()
+
+        text = "<ide_opened_file>Opened file</ide_opened_file>\n\nQuestion"
+        cleaned = wiki_gen._clean_user_message(text)
+
+        # Should return original text when filtering is disabled
+        assert cleaned == text
+        assert "<ide_opened_file>" in cleaned

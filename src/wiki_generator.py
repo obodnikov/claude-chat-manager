@@ -16,6 +16,7 @@ from .parser import parse_jsonl_file
 from .formatters import format_timestamp, clean_project_name
 from .wiki_parser import WikiParser, WikiChatSection
 from .config import config
+from .filters import ChatFilter
 
 logger = logging.getLogger(__name__)
 
@@ -44,16 +45,21 @@ class WikiGenerator:
                        If None, will use fallback title generation.
         """
         self.llm_client = llm_client
+        # Initialize shared chat filter with wiki-specific config
+        self.chat_filter = ChatFilter(
+            skip_trivial=config.wiki_skip_trivial,
+            min_messages=config.wiki_min_messages,
+            min_words=config.wiki_min_words,
+            skip_keywords=config.wiki_skip_keywords,
+            require_content=config.wiki_require_content,
+            filter_system_tags=config.wiki_filter_system_tags
+        )
         logger.debug(f"WikiGenerator initialized (LLM: {llm_client is not None})")
 
     def _is_pointless_chat(self, chat_data: List[Dict[str, Any]]) -> bool:
         """Check if a chat is trivial/pointless and should be filtered out.
 
-        Uses hybrid filtering approach:
-        1. Message count threshold
-        2. Word count threshold
-        3. Keyword detection in first user message
-        4. Content requirement (optional)
+        Delegates to shared ChatFilter for consistency across export modes.
 
         Args:
             chat_data: Parsed chat data.
@@ -61,79 +67,33 @@ class WikiGenerator:
         Returns:
             True if chat should be filtered out, False otherwise.
         """
-        # Skip filtering if disabled
-        if not config.wiki_skip_trivial:
-            return False
+        return self.chat_filter.is_pointless_chat(chat_data)
 
-        # Extract conversation messages (exclude system messages)
-        messages = [
-            entry for entry in chat_data
-            if entry.get('message', {}).get('role') in ('user', 'assistant')
-        ]
+    def _strip_system_tags(self, text: str) -> str:
+        """Remove system notification tags from user message.
 
-        # Check 1: Message count threshold
-        if len(messages) < config.wiki_min_messages:
-            logger.debug(f"Chat filtered: too few messages ({len(messages)} < {config.wiki_min_messages})")
-            return True
+        Delegates to shared ChatFilter for consistency.
 
-        # Check 2: Word count threshold
-        total_words = 0
-        for entry in messages:
-            text = self._extract_text_only(entry.get('message', {}).get('content', ''))
-            total_words += len(text.split())
+        Args:
+            text: User message text that may contain system tags.
 
-        if total_words < config.wiki_min_words:
-            logger.debug(f"Chat filtered: too few words ({total_words} < {config.wiki_min_words})")
-            return True
+        Returns:
+            Text with system tags removed.
+        """
+        return self.chat_filter.strip_system_tags(text)
 
-        # Check 3: Keyword detection in first user message
-        first_user_text = None
-        for entry in messages:
-            if entry.get('message', {}).get('role') == 'user':
-                first_user_text = self._extract_text_only(
-                    entry.get('message', {}).get('content', '')
-                ).lower().strip()
-                break
+    def _clean_user_message(self, text: str) -> Optional[str]:
+        """Clean user message by removing system notifications.
 
-        if first_user_text:
-            # Check if first message is a single keyword
-            first_user_words = first_user_text.split()
-            if len(first_user_words) <= 2:  # Very short first message
-                for keyword in config.wiki_skip_keywords:
-                    if keyword in first_user_text:
-                        logger.debug(f"Chat filtered: keyword '{keyword}' in first message")
-                        return True
+        Delegates to shared ChatFilter for consistency.
 
-        # Check 4: Content requirement (optional)
-        if config.wiki_require_content:
-            has_content = False
-            for entry in messages:
-                content = entry.get('message', {}).get('content', '')
-                # Check for code blocks
-                if isinstance(content, str) and ('```' in content):
-                    has_content = True
-                    break
-                # Check for file references in tool use
-                elif isinstance(content, list):
-                    for item in content:
-                        if isinstance(item, dict):
-                            if item.get('type') == 'tool_use':
-                                tool_input = item.get('input', {})
-                                if 'file_path' in tool_input:
-                                    has_content = True
-                                    break
-                            elif item.get('type') == 'text' and '```' in item.get('text', ''):
-                                has_content = True
-                                break
-                if has_content:
-                    break
+        Args:
+            text: User message text.
 
-            if not has_content:
-                logger.debug("Chat filtered: no code blocks or file references")
-                return True
-
-        # Chat passes all filters
-        return False
+        Returns:
+            Cleaned text or None if message is purely system notification.
+        """
+        return self.chat_filter.clean_user_message(text)
 
     def generate_wiki(
         self,
@@ -267,14 +227,12 @@ class WikiGenerator:
                 # Get chat date
                 date_str = self._extract_chat_date(chat_data)
 
-                # Generate clean content
-                content = self._generate_chat_content(chat_data)
-
+                # Store chat data for content generation later (with section numbers)
                 chat_sections.append({
                     'title': title,
                     'date': date_str,
                     'chat_id': chat_id,
-                    'content': content,
+                    'chat_data': chat_data,  # Store raw data
                     'timestamp': self._extract_timestamp(chat_data)
                 })
 
@@ -412,19 +370,26 @@ class WikiGenerator:
 
         return ''.join(excerpt_parts)
 
-    def _generate_chat_content(self, chat_data: List[Dict[str, Any]]) -> str:
+    def _generate_chat_content(
+        self,
+        chat_data: List[Dict[str, Any]],
+        chat_section_num: int = 0
+    ) -> Tuple[str, List[str]]:
         """Generate clean wiki content from chat data.
 
         Filters out tool use/result noise, keeps only conversation.
 
         Args:
             chat_data: Parsed chat data.
+            chat_section_num: Section number for anchor generation.
 
         Returns:
-            Clean markdown content.
+            Tuple of (clean_markdown_content, list_of_user_questions).
         """
         content_parts = []
         files_modified = set()
+        user_questions = []
+        user_question_count = 0
 
         for entry in chat_data:
             message = entry.get('message', {})
@@ -445,8 +410,34 @@ class WikiGenerator:
 
             # Format based on role
             if role == 'user':
-                # User question as blockquote
+                # Clean system tags from user message
+                cleaned_text = self._clean_user_message(text)
+
+                # Skip if message was purely system notification
+                if not cleaned_text:
+                    continue
+
+                # Use cleaned text
+                text = cleaned_text
+                user_question_count += 1
+
+                # Extract first line or truncate for TOC
+                first_line = text.split('\n')[0].strip()
+                if len(first_line) > 80:
+                    first_line = first_line[:77] + '...'
+
+                # Store user question for TOC
+                user_questions.append(first_line)
+
+                # Create anchor for this user question
+                anchor_id = f"chat{chat_section_num}-user-q{user_question_count}"
+
+                # Add visual separator and marker for user input
+                content_parts.append("---\n")
+                content_parts.append(f'<a id="{anchor_id}"></a>\n')
+                content_parts.append("👤 **USER:**\n")
                 content_parts.append(f"> {text}\n")
+
             elif role == 'assistant':
                 # Assistant response
                 content_parts.append(f"{text}\n")
@@ -456,12 +447,12 @@ class WikiGenerator:
                     files_list = ', '.join(f'`{f}`' for f in sorted(files))
                     content_parts.append(f"\n*Files: {files_list}*\n")
 
-        return '\n'.join(content_parts)
+        return '\n'.join(content_parts), user_questions
 
     def _extract_clean_content(self, content: Any) -> Tuple[str, List[str]]:
         """Extract clean text and file references from content.
 
-        Filters out tool use/result messages.
+        Delegates to shared ChatFilter for consistency.
 
         Args:
             content: Message content (string, list, or dict).
@@ -469,48 +460,12 @@ class WikiGenerator:
         Returns:
             Tuple of (clean_text, list_of_files).
         """
-        text_parts = []
-        files = []
-
-        if isinstance(content, str):
-            return content.strip(), []
-
-        elif isinstance(content, list):
-            for item in content:
-                if not isinstance(item, dict):
-                    if isinstance(item, str) and item.strip():
-                        text_parts.append(item.strip())
-                    continue
-
-                item_type = item.get('type', '')
-
-                if item_type == 'text':
-                    # Regular text content
-                    text = item.get('text', '').strip()
-                    if text:
-                        # Preserve code blocks (fenced format)
-                        text_parts.append(text)
-
-                elif item_type == 'tool_use':
-                    # Extract file reference from tool use
-                    tool_input = item.get('input', {})
-                    if 'file_path' in tool_input:
-                        files.append(tool_input['file_path'])
-                    # Skip the tool use message itself
-
-                # Skip tool_result, image, etc.
-
-        elif isinstance(content, dict):
-            if 'text' in content:
-                return content['text'].strip(), []
-            elif 'content' in content:
-                return self._extract_clean_content(content['content'])
-
-        clean_text = '\n\n'.join(text_parts)
-        return clean_text, files
+        return self.chat_filter.extract_clean_content(content, include_tool_use=False)
 
     def _extract_text_only(self, content: Any) -> str:
         """Extract only text content, ignoring everything else.
+
+        Delegates to shared ChatFilter for consistency.
 
         Args:
             content: Message content.
@@ -518,8 +473,7 @@ class WikiGenerator:
         Returns:
             Plain text string.
         """
-        text, _ = self._extract_clean_content(content)
-        return text
+        return self.chat_filter.extract_text_only(content)
 
     def _extract_chat_date(self, chat_data: List[Dict[str, Any]]) -> str:
         """Extract date from first message in chat.
@@ -588,11 +542,11 @@ class WikiGenerator:
         project_name: str,
         chat_sections: List[Dict[str, Any]]
     ) -> str:
-        """Build complete wiki document with TOC.
+        """Build complete wiki document with hierarchical TOC.
 
         Args:
             project_name: Project name.
-            chat_sections: List of chat section dicts.
+            chat_sections: List of chat section dicts with chat_data.
 
         Returns:
             Complete wiki markdown.
@@ -611,18 +565,49 @@ class WikiGenerator:
 
         lines.append("\n---\n")
 
-        # Table of Contents
-        lines.append("## 📑 Table of Contents\n")
+        # Generate content for each section to extract user questions
+        sections_with_content = []
         for i, section in enumerate(chat_sections, 1):
+            chat_data = section.get('chat_data', [])
+            content, user_questions = self._generate_chat_content(chat_data, i)
+
+            sections_with_content.append({
+                'section_num': i,
+                'title': section['title'],
+                'date': section['date'],
+                'chat_id': section['chat_id'],
+                'timestamp': section['timestamp'],
+                'content': content,
+                'user_questions': user_questions
+            })
+
+        # Table of Contents (Hierarchical with user questions)
+        lines.append("## 📑 Table of Contents\n")
+        for section in sections_with_content:
+            i = section['section_num']
             title = section['title']
             date = section['date']
+            chat_id = section['chat_id']
+            user_questions = section['user_questions']
+
             anchor = self._create_anchor(i, title)
-            lines.append(f"{i}. [{title}](#{anchor}) - *{date}*")
+            lines.append(f"### {i}. [{title}](#{anchor})")
+            lines.append(f"*{date} | Chat ID: {chat_id}*\n")
 
-        lines.append("\n---\n")
+            # Add user questions as sub-items if any
+            if user_questions:
+                lines.append("**Key Topics:**")
+                for q_num, question in enumerate(user_questions, 1):
+                    q_anchor = f"chat{i}-user-q{q_num}"
+                    lines.append(f"- 🗣️ [{question}](#{q_anchor})")
 
-        # Chat sections
-        for i, section in enumerate(chat_sections, 1):
+            lines.append("")  # Blank line after each section
+
+        lines.append("---\n")
+
+        # Chat sections with content
+        for section in sections_with_content:
+            i = section['section_num']
             title = section['title']
             date = section['date']
             chat_id = section['chat_id']
@@ -635,11 +620,11 @@ class WikiGenerator:
             lines.append(f"<!-- wiki-meta: chat_id={chat_id}, timestamp={timestamp} -->")
             lines.append(f"*Date: {date} | Chat ID: {chat_id}*\n")
 
-            # Content
+            # Content (already includes user markers and anchors)
             lines.append(content)
 
             # Separator between chats
-            if i < len(chat_sections):
+            if i < len(sections_with_content):
                 lines.append("\n---\n")
 
         return '\n'.join(lines)
