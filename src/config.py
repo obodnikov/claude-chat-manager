@@ -259,6 +259,116 @@ class Config:
         value = os.getenv('WIKI_FILTER_SYSTEM_TAGS', 'true').lower()
         return value in ('true', '1', 'yes', 'on')
 
+    # Book Export Settings
+
+    @property
+    def book_skip_trivial(self) -> bool:
+        """Check if trivial chats should be filtered out in book exports.
+
+        Returns:
+            True if trivial chats should be skipped.
+        """
+        value = os.getenv('BOOK_SKIP_TRIVIAL', 'true').lower()
+        return value in ('true', '1', 'yes', 'on')
+
+    @property
+    def book_min_messages(self) -> int:
+        """Get the minimum message count for a chat to be included in book.
+
+        Returns:
+            Minimum number of messages.
+        """
+        min_messages = os.getenv('BOOK_MIN_MESSAGES', '3')
+        try:
+            return int(min_messages)
+        except ValueError:
+            logger.warning(f"Invalid BOOK_MIN_MESSAGES: {min_messages}, using default 3")
+            return 3
+
+    @property
+    def book_min_words(self) -> int:
+        """Get the minimum word count for a chat to be included in book.
+
+        Returns:
+            Minimum total word count.
+        """
+        min_words = os.getenv('BOOK_MIN_WORDS', '75')
+        try:
+            return int(min_words)
+        except ValueError:
+            logger.warning(f"Invalid BOOK_MIN_WORDS: {min_words}, using default 75")
+            return 75
+
+    @property
+    def book_skip_keywords(self) -> list:
+        """Get the list of keywords that indicate trivial chats.
+
+        Returns:
+            List of keywords to skip.
+        """
+        keywords = os.getenv('BOOK_SKIP_KEYWORDS', 'warmup,test,hello,hi,ready')
+        return [k.strip().lower() for k in keywords.split(',') if k.strip()]
+
+    @property
+    def book_generate_titles(self) -> bool:
+        """Check if book exports should generate descriptive filenames.
+
+        Returns:
+            True if descriptive filenames should be generated.
+        """
+        value = os.getenv('BOOK_GENERATE_TITLES', 'true').lower()
+        return value in ('true', '1', 'yes', 'on')
+
+    @property
+    def book_use_llm_titles(self) -> bool:
+        """Check if book exports should use LLM for title generation.
+
+        Returns:
+            True if LLM should be used for titles.
+        """
+        value = os.getenv('BOOK_USE_LLM_TITLES', 'false').lower()
+        return value in ('true', '1', 'yes', 'on')
+
+    @property
+    def book_filter_system_tags(self) -> bool:
+        """Check if system tags should be filtered from user messages in book.
+
+        Returns:
+            True if system tags should be filtered.
+        """
+        value = os.getenv('BOOK_FILTER_SYSTEM_TAGS', 'true').lower()
+        return value in ('true', '1', 'yes', 'on')
+
+    @property
+    def book_filter_tool_noise(self) -> bool:
+        """Check if tool use/result messages should be filtered in book.
+
+        Returns:
+            True if tool noise should be filtered.
+        """
+        value = os.getenv('BOOK_FILTER_TOOL_NOISE', 'true').lower()
+        return value in ('true', '1', 'yes', 'on')
+
+    @property
+    def book_show_file_refs(self) -> bool:
+        """Check if file references should be shown in book exports.
+
+        Returns:
+            True if file references should be displayed.
+        """
+        value = os.getenv('BOOK_SHOW_FILE_REFS', 'true').lower()
+        return value in ('true', '1', 'yes', 'on')
+
+    @property
+    def book_include_date(self) -> bool:
+        """Check if date should be included in book export filenames.
+
+        Returns:
+            True if date should be appended to filenames.
+        """
+        value = os.getenv('BOOK_INCLUDE_DATE', 'true').lower()
+        return value in ('true', '1', 'yes', 'on')
+
 
 # Global configuration instance
 config = Config()

@@ -421,25 +421,56 @@ Features:
 - **Fenced Code Blocks**: Proper syntax highlighting with language detection
 - **Fallback Titles**: Uses first user question if LLM unavailable
 
-### Book Format (Clean & Readable)
+### Book Format (Clean & Readable - Enhanced!)
+
+**NEW in v2.1:** Book mode now includes intelligent filtering and cleaning features inspired by wiki mode!
+
+**Enhanced Features:**
+- ✨ **Trivial Chat Filtering**: Automatically skips low-value conversations (warmup, tests, etc.)
+- 🎯 **Smart Filenames**: Generates descriptive names from content instead of UUIDs
+- 🧹 **System Tag Cleaning**: Removes IDE notifications and system messages
+- 🔇 **Tool Noise Removal**: Filters out technical tool execution details
+- 👤 **Enhanced User Highlighting**: Clear visual separators and USER markers
+- 📎 **File Reference Tracking**: Clean file lists without tool noise
+- 💻 **Code Block Preservation**: Maintains proper markdown formatting
+
 ```markdown
 # Claude Chat Export
 
-**Generated: 2025-09-21 12:25:52**
+**Generated: 2025-11-09 10:30:00**
 
+---
+
+👤 **USER:**
 > should i include package-lock file in .gitignore
 
 I'll check your current .gitignore file to see what's already included and provide guidance on package-lock.json.
 
-🔧 [Tool Use: Read]
-   File: /home/mike/src/pollen-local-api/.gitignore
-
 For Node.js projects, the decision about package-lock.json in .gitignore depends on your project type...
 
+*Files: .gitignore*
+
+---
+
+👤 **USER:**
 > what about yarn.lock?
 
 For yarn.lock, the recommendation is different from package-lock.json...
 ```
+
+**Configuration** (all optional, enabled by default):
+```bash
+# .env
+BOOK_SKIP_TRIVIAL=true              # Filter out trivial chats
+BOOK_GENERATE_TITLES=true           # Generate descriptive filenames
+BOOK_USE_LLM_TITLES=false          # Use AI for titles (requires API key)
+BOOK_FILTER_SYSTEM_TAGS=true       # Remove system notifications
+BOOK_FILTER_TOOL_NOISE=true        # Remove tool execution details
+BOOK_SHOW_FILE_REFS=true           # Show modified files
+BOOK_INCLUDE_DATE=true             # Append date to filenames (YYYY-MM-DD)
+```
+
+See [docs/BOOK_MODE_ENHANCEMENTS.md](docs/BOOK_MODE_ENHANCEMENTS.md) for complete details.
 
 ### Markdown Format (Standard)
 ```markdown
@@ -479,12 +510,12 @@ Export entire projects to organized files:
 # 'e' for standard markdown export
 # 'eb' for clean book format export
 
-# Creates directories like:
-# ProjectName_export_20250921_103000/
-# ProjectName_book_export_20250921_103000/
-#   ├── chat-session-1.md
-#   ├── mobile-fixes.md
-#   └── api-optimization.md
+# Creates directories with machine hostname and timestamp:
+# MacBook-Air-Michael-Claude_Chat_Manager-markdown-20251109_103654/
+# MacBook-Air-Michael-Claude_Chat_Manager-book-20251109_103654/
+#   ├── implementing-authentication-2025-11-09.md
+#   ├── fixing-database-queries-2025-11-08.md
+#   └── adding-user-roles-2025-11-07.md
 ```
 
 ### Search Features
@@ -502,12 +533,38 @@ Each project contains `.jsonl` files representing individual chats.
 
 ## 🛠️ What's New
 
-### Book Format Features
+### v2.1.0 - Book Mode Enhancements (November 2025)
+
+**Major Improvements:**
+- 🎯 **Intelligent Filtering**: Automatically filters trivial/warmup chats
+- 📝 **Smart Filenames**: Generates descriptive names from conversation topics
+- 🧹 **Content Cleaning**: Removes system tags and tool execution noise
+- 👤 **Better User Visibility**: Enhanced highlighting with visual separators
+- 📎 **File Tracking**: Clean references to modified files
+- 🔄 **Shared Architecture**: Unified filtering logic between wiki and book modes
+
+**Configuration:**
+- All features configurable via `.env` file
+- Sensible defaults (enabled by default)
+- Optional LLM-powered title generation
+- Backward compatible with previous versions
+
+See [docs/BOOK_MODE_ENHANCEMENTS.md](docs/BOOK_MODE_ENHANCEMENTS.md) for complete documentation.
+
+### v2.0.0 - Previous Features
+
+**Book Format Features:**
 - **Clean presentation**: Removes timestamps and message numbers for distraction-free reading
-- **Simple user questions**: Questions appear as simple blockquotes (`> question text`)
+- **Simple user questions**: Questions appear as blockquotes with USER markers
 - **Direct responses**: Assistant answers without headers or metadata
 - **Perfect for sharing**: Creates clean, readable documents ideal for documentation or reference
 - **Batch export**: Use `eb` command in project browser for bulk book format export
+
+**Wiki Format Features:**
+- AI-powered single-page wiki generation
+- Smart merge and rebuild functionality for updates
+- Hierarchical table of contents with user questions
+- Automatic trivial chat filtering
 
 ### Enhanced Header
 - Bold formatting for generation timestamp
@@ -682,12 +739,14 @@ The wiki feature transforms your entire project history into a single, well-orga
 
 ## 🆕 Book Format Use Cases
 
-The book format is perfect for:
-- **📚 Documentation**: Create clean reference materials from conversations
-- **📤 Sharing**: Export conversations in a professional, readable format
-- **📝 Tutorials**: Convert technical discussions into tutorial-style documents
-- **🎯 Focus**: Read conversations without timestamp and metadata distractions
+The enhanced book format is perfect for:
+- **📚 Documentation**: Create clean reference materials with auto-generated descriptive filenames
+- **📤 Sharing**: Export conversations in a professional format, filtered for quality
+- **📝 Tutorials**: Convert technical discussions into tutorial-style documents without tool noise
+- **🎯 Focus**: Read conversations without timestamps, metadata, or system notifications
 - **📖 Archiving**: Store important conversations in a clean, timeless format
+- **🔍 Quality Control**: Automatically filter out trivial warmup/test conversations
+- **🏢 Professional Use**: Generate client-ready documentation from development chats
 
 ## 🤝 Contributing
 
@@ -739,17 +798,20 @@ This tool is provided as-is for personal use with Claude Desktop chat histories.
 
 ## 🎯 Project Stats
 
-- **Version**: 2.0.0
+- **Version**: 2.1.0
 - **Python**: 3.9+
-- **Modules**: 14 source modules (wiki_parser added)
+- **Modules**: 15 source modules (filters module added for shared logic)
 - **Tests**: 73 unit tests (100% passing)
 - **Coverage**: Core modules 52-100%
 - **Type Hints**: 100% coverage
-- **Documentation**: Complete with examples
-- **Features**: 5 export formats including AI-powered wiki with update/rebuild capabilities
+- **Documentation**: Complete with examples and enhancement guide
+- **Features**: 5 export formats including:
+  - Enhanced book mode with intelligent filtering
+  - AI-powered wiki with update/rebuild capabilities
+  - Shared filtering architecture across modes
 
 ---
 
 **Made with ❤️ for the Claude community**
 
-*Version 2.0 - Production-ready with professional code standards!*
+*Version 2.1 - Enhanced book mode with intelligent filtering!*

@@ -1,0 +1,4 @@
+Always use AI*.md for coding rules.
+Check previous talks and implementations in doc/chats directory. 
+check documentation in root and docs/ directories.
+**Never start code right after USER question/message. Propose solution and ask for explicit request for implementation**
