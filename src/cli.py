@@ -34,31 +34,53 @@ from .exceptions import ProjectNotFoundError, ChatFileNotFoundError
 logger = logging.getLogger(__name__)
 
 
-def get_export_dirname(export_type: str) -> str:
-    """Generate export directory name with machine hostname.
+def get_export_dirname(project_name: str, export_type: str) -> str:
+    """Generate export directory name with machine hostname and project name.
 
     Creates directory names in format:
-        hostname-Claude_Chat_Manager-type-YYYYMMDD_HHMMSS
+        hostname-Project_Name-type-YYYYMMDD_HHMMSS
+
+    Uses underscores for spaces in project name to maintain readability.
 
     Examples:
-        MacBook-Air-Michael-Claude_Chat_Manager-book-20251109_103654
+        MacBook-Air-Michael-Learn_Telegram_Bot-book-20251109_103654
         MacBook-Air-Michael-Claude_Chat_Manager-markdown-20251109_103654
 
     Args:
+        project_name: Name of the project being exported.
         export_type: Type of export ('book' or 'markdown').
 
     Returns:
         Directory name string.
     """
-    # Get and sanitize hostname
+    import re
+
+    # Get and sanitize hostname (removes .local, converts spaces to hyphens)
     hostname = socket.gethostname()
     hostname = sanitize_for_filename(hostname)
+
+    # Sanitize project name: replace spaces with underscores
+    # Remove leading dash if present (from directory name format like "-Users-mike-src-project")
+    project_clean = project_name.lstrip('-')
+
+    # Replace spaces with underscores for project name
+    project_sanitized = project_clean.replace(' ', '_')
+
+    # Remove special characters but keep underscores and hyphens
+    project_sanitized = re.sub(r'[^\w-]', '', project_sanitized)
+
+    # Collapse multiple consecutive underscores or hyphens
+    project_sanitized = re.sub(r'_+', '_', project_sanitized)
+    project_sanitized = re.sub(r'-+', '-', project_sanitized)
+
+    # Remove leading/trailing underscores or hyphens
+    project_sanitized = project_sanitized.strip('-_')
 
     # Generate timestamp
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
     # Combine components
-    return f"{hostname}-Claude_Chat_Manager-{export_type}-{timestamp}"
+    return f"{hostname}-{project_sanitized}-{export_type}-{timestamp}"
 
 
 def display_projects_list() -> None:
@@ -244,7 +266,7 @@ def browse_project_interactive(project_path: Path) -> bool:
                         break
                 return True
             elif choice.lower() == 'e':
-                export_dir = Path(get_export_dirname('markdown'))
+                export_dir = Path(get_export_dirname(project_name, 'markdown'))
                 print_colored(f"📤 Exporting all chats to markdown in: {export_dir}", Colors.BLUE)
 
                 exported_files = export_project_chats(project_path, export_dir, 'markdown')
@@ -255,7 +277,7 @@ def browse_project_interactive(project_path: Path) -> bool:
                     print(f"   {file.name} ({size/1024:.1f}KB)")
                 return True
             elif choice.lower() == 'eb':
-                export_dir = Path(get_export_dirname('book'))
+                export_dir = Path(get_export_dirname(project_name, 'book'))
                 print_colored(f"📚 Exporting all chats to book format in: {export_dir}", Colors.BLUE)
 
                 exported_files = export_project_chats(project_path, export_dir, 'book')
