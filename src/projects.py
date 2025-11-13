@@ -178,7 +178,7 @@ def get_project_chat_files(project_path: Path) -> List[Path]:
         return []
 
     chat_files = list(project_path.glob('*.jsonl'))
-    chat_files.sort()
+    chat_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
 
     logger.debug(f"Found {len(chat_files)} chat files in {project_path.name}")
     return chat_files
