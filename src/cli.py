@@ -223,17 +223,21 @@ def browse_project_interactive(project_path: Path) -> bool:
         print_colored(f"Found {len(chat_files)} chat file(s):", Colors.CYAN)
         print()
 
+        # Calculate maximum filename length for proper alignment
+        max_filename_len = max((len(f.stem) for f in chat_files), default=36)
+        max_filename_len = max(max_filename_len, 36)  # Minimum width for UUIDs
+
         for i, file_path in enumerate(chat_files, 1):
             filename = file_path.stem
             try:
                 size = file_path.stat().st_size
                 size_str = f"{size/1024:.1f}KB" if size > 1024 else f"{size}B"
-                modified = datetime.fromtimestamp(file_path.stat().st_mtime).strftime('%Y-%m-%d')
+                modified = datetime.fromtimestamp(file_path.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')
                 msg_count = count_messages_in_file(file_path)
 
-                print(f"{i:2d}) {filename:<30} {size_str:>8} {msg_count:>10} msgs {modified}")
+                print(f"{i:2d}) {filename:<{max_filename_len}}  {size_str:>9}  {msg_count:>6} msgs {modified}")
             except Exception:
-                print(f"{i:2d}) {filename:<30} {'error':>8} {'?':>10} msgs {'unknown'}")
+                print(f"{i:2d}) {filename:<{max_filename_len}}  {'error':>9}  {'?':>6} msgs {'unknown'}")
 
         print()
         print_colored("Choose an option:", Colors.YELLOW)
