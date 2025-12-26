@@ -10,7 +10,8 @@ A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat f
 - 🔍 **Smart Search** - Search project names and chat content across all conversations
 - 📖 **Paged Chat Viewing** - Unix `less`-like navigation for comfortable reading
 - 📊 **Multiple Export Formats** - Pretty terminal output, Markdown, clean Book format, or raw JSON
-- 📚 **Wiki Generation** - NEW! Generate AI-powered single-page wikis from entire projects
+- 📚 **Wiki Generation** - Generate AI-powered single-page wikis from entire projects
+- 🔒 **Data Sanitization** - NEW! Automatically detect and redact API keys, tokens, and passwords
 - 🤖 **AI-Powered Titles** - Automatic chat title generation using LLM (via OpenRouter)
 - 🎯 **Batch Export** - Export entire projects to organized Markdown files
 - 🎨 **Colored Output** - Beautiful terminal interface with syntax highlighting
@@ -313,6 +314,89 @@ Without an API key, the tool falls back to using the first user question as the 
 When browsing interactively without `-o`, you can still export from the project menu:
 - Press `e` to export all chats to markdown
 - Press `eb` to export all chats to book format
+
+## 🔒 Sensitive Data Sanitization (NEW!)
+
+Automatically detect and redact sensitive information from chat exports including API keys, tokens, passwords, and environment variables.
+
+### Quick Start
+
+```bash
+# Preview what would be sanitized
+python3 claude-chat-manager.py "My Project" --sanitize-preview
+
+# Export with sanitization
+python3 claude-chat-manager.py "My Project" -f book -o exports/ --sanitize
+
+# Wiki with sanitization
+python3 claude-chat-manager.py "My Project" --wiki wiki.md --sanitize
+```
+
+### What Gets Detected
+
+- **API Keys**: OpenAI (`sk-*`), GitHub (`ghp_*`), AWS (`AKIA*`), Google (`AIza*`), etc.
+- **Tokens**: Bearer tokens, JWTs, Slack tokens
+- **Passwords**: Contextual detection (`password = "..."`)
+- **Environment Variables**: `API_KEY=sk-xxx`, `export TOKEN=...`
+
+### CLI Flags
+
+```bash
+--sanitize                    # Enable sanitization
+--sanitize-level LEVEL        # minimal, balanced, aggressive, custom
+--sanitize-style STYLE        # simple, stars, labeled, partial, hash
+--sanitize-paths              # Sanitize file paths
+--sanitize-preview            # Preview without exporting
+--sanitize-report FILE        # Generate detailed report
+```
+
+### Examples
+
+```bash
+# Use aggressive detection with labeled redaction
+python3 claude-chat-manager.py "Project" -f book -o exports/ \
+    --sanitize --sanitize-level aggressive --sanitize-style labeled
+
+# Preview with custom settings
+python3 claude-chat-manager.py "Project" --sanitize-preview \
+    --sanitize-level aggressive --sanitize-paths
+```
+
+### Redaction Styles
+
+| Style | Example |
+|-------|---------|
+| `partial` (default) | `sk-proj-abc...` → `sk-pr***xyz` |
+| `labeled` | `sk-proj-abc...` → `[API_KEY]` |
+| `simple` | `sk-proj-abc...` → `REDACTED` |
+| `stars` | `sk-proj-abc...` → `**********` |
+| `hash` | `sk-proj-abc...` → `[a3f4d8c2]` |
+
+### Configuration (.env)
+
+```bash
+SANITIZE_ENABLED=true
+SANITIZE_LEVEL=balanced
+SANITIZE_STYLE=partial
+SANITIZE_PATHS=false
+```
+
+### Post-Processing Tool
+
+Sanitize already-exported files:
+
+```bash
+# Interactive mode - review each match
+python3 sanitize-chats.py exported-chats/ --interactive
+
+# Batch mode - auto-sanitize
+python3 sanitize-chats.py exported-chats/
+
+# Preview only
+python3 sanitize-chats.py my-chat.md --preview
+```
+
+📚 **Full Documentation:** See [docs/SANITIZATION.md](docs/SANITIZATION.md) for complete guide, patterns, and best practices.
 
 ## 🎮 Navigation Controls
 
