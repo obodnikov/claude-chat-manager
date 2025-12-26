@@ -15,6 +15,7 @@ from .formatters import format_content, format_tool_result, format_timestamp, cl
 from .colors import Colors, get_role_color, print_colored
 from .exceptions import ExportError
 from .filters import ChatFilter
+from .sanitizer import Sanitizer
 from .config import config
 
 logger = logging.getLogger(__name__)
@@ -149,7 +150,7 @@ def export_chat_markdown(chat_data: List[Dict[str, Any]]) -> str:
     return ''.join(output_lines)
 
 
-def export_chat_book(chat_data: List[Dict[str, Any]]) -> str:
+def export_chat_book(chat_data: List[Dict[str, Any]], sanitize: Optional[bool] = None) -> str:
     """Export chat in clean book format without timestamps.
 
     Applies enhanced filtering based on configuration:
@@ -157,9 +158,11 @@ def export_chat_book(chat_data: List[Dict[str, Any]]) -> str:
     - Removes tool use/result noise
     - Shows file references (optional)
     - Enhanced user message highlighting
+    - Sanitizes sensitive data (optional)
 
     Args:
         chat_data: Parsed JSONL chat data.
+        sanitize: Enable sanitization (overrides config if provided).
 
     Returns:
         Book formatted string.
@@ -167,6 +170,21 @@ def export_chat_book(chat_data: List[Dict[str, Any]]) -> str:
     output_lines = []
     output_lines.append('# Claude Chat Export\n')
     output_lines.append(f'**Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}**\n\n')
+
+    # Initialize sanitizer if enabled
+    sanitizer = None
+    sanitize_enabled = sanitize if sanitize is not None else config.sanitize_enabled
+
+    if sanitize_enabled:
+        sanitizer = Sanitizer(
+            enabled=True,
+            level=config.sanitize_level,
+            style=config.sanitize_style,
+            sanitize_paths=config.sanitize_paths,
+            custom_patterns=config.sanitize_custom_patterns,
+            allowlist=config.sanitize_allowlist
+        )
+        logger.debug(f"Sanitization enabled for book export (level: {config.sanitize_level}, style: {config.sanitize_style})")
 
     # Initialize chat filter with book-specific config
     chat_filter = ChatFilter(
@@ -202,6 +220,10 @@ def export_chat_book(chat_data: List[Dict[str, Any]]) -> str:
                 if not text:
                     continue
 
+            # Apply sanitization to user text
+            if sanitizer:
+                text, _ = sanitizer.sanitize_text(text, track_changes=False)
+
             # Enhanced user message formatting with visual separator
             output_lines.append('---\n\n')
             output_lines.append('👤 **USER:**\n')
@@ -210,6 +232,10 @@ def export_chat_book(chat_data: List[Dict[str, Any]]) -> str:
         elif role == 'assistant':
             if not text or not text.strip():
                 continue
+
+            # Apply sanitization to assistant text
+            if sanitizer:
+                text, _ = sanitizer.sanitize_text(text, track_changes=False)
 
             # Assistant response without headers
             output_lines.append(f'{text}\n')

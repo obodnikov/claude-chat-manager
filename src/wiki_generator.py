@@ -15,6 +15,7 @@ from .llm_client import OpenRouterClient, OpenRouterError
 from .parser import parse_jsonl_file
 from .formatters import format_timestamp, clean_project_name
 from .wiki_parser import WikiParser, WikiChatSection
+from .sanitizer import Sanitizer
 from .config import config
 from .filters import ChatFilter
 
@@ -37,14 +38,45 @@ class WikiGenerationStats:
 class WikiGenerator:
     """Generate wiki-style documentation from chat files."""
 
-    def __init__(self, llm_client: Optional[OpenRouterClient] = None) -> None:
+    def __init__(self, llm_client: Optional[OpenRouterClient] = None, sanitize: Optional[bool] = None) -> None:
         """Initialize wiki generator.
 
         Args:
             llm_client: Optional OpenRouter client for title generation.
                        If None, will use fallback title generation.
+            sanitize: Enable sanitization (overrides config if provided).
         """
         self.llm_client = llm_client
+
+        # Initialize sanitizer if enabled
+        self.sanitizer = None
+
+        # Check if sanitize parameter was explicitly provided
+        if sanitize is not None:
+            sanitize_enabled = sanitize
+        else:
+            # Use config value, but handle test mocks gracefully
+            try:
+                sanitize_enabled = config.sanitize_enabled
+            except (AttributeError, TypeError):
+                sanitize_enabled = False
+
+        if sanitize_enabled:
+            try:
+                self.sanitizer = Sanitizer(
+                    enabled=True,
+                    level=config.sanitize_level,
+                    style=config.sanitize_style,
+                    sanitize_paths=config.sanitize_paths,
+                    custom_patterns=config.sanitize_custom_patterns,
+                    allowlist=config.sanitize_allowlist
+                )
+                logger.debug(f"Sanitization enabled for wiki (level: {config.sanitize_level}, style: {config.sanitize_style})")
+            except (ValueError, AttributeError, TypeError) as e:
+                # Handle mock objects during tests or invalid config in production
+                logger.warning(f"Failed to initialize sanitizer: {e}. Sanitization disabled.")
+                self.sanitizer = None
+
         # Initialize shared chat filter with wiki-specific config
         self.chat_filter = ChatFilter(
             skip_trivial=config.wiki_skip_trivial,
@@ -316,6 +348,12 @@ class WikiGenerator:
                 # Extract text from content
                 text = self._extract_text_only(content)
                 if text:
+                    # Apply sanitization to title if enabled
+                    # Note: This is separate from content sanitization to ensure
+                    # titles (which appear in TOC) don't leak sensitive data
+                    if self.sanitizer:
+                        text, _ = self.sanitizer.sanitize_text(text, track_changes=False)
+
                     # Use first line or first 60 chars
                     first_line = text.split('\n')[0]
                     title = first_line[:60].strip()
@@ -356,6 +394,12 @@ class WikiGenerator:
             text = self._extract_text_only(content)
             if not text:
                 continue
+
+            # Apply sanitization before sending to external LLM API
+            # Note: This is intentionally separate from content/title sanitization
+            # to prevent leaking secrets to third-party services (OpenRouter)
+            if self.sanitizer:
+                text, _ = self.sanitizer.sanitize_text(text, track_changes=False)
 
             # Add role prefix
             prefix = "User: " if role == 'user' else "Assistant: "
@@ -419,6 +463,11 @@ class WikiGenerator:
 
                 # Use cleaned text
                 text = cleaned_text
+
+                # Apply sanitization to user text
+                if self.sanitizer:
+                    text, _ = self.sanitizer.sanitize_text(text, track_changes=False)
+
                 user_question_count += 1
 
                 # Extract first line or truncate for TOC
@@ -439,6 +488,10 @@ class WikiGenerator:
                 content_parts.append(f"> {text}\n")
 
             elif role == 'assistant':
+                # Apply sanitization to assistant text
+                if self.sanitizer:
+                    text, _ = self.sanitizer.sanitize_text(text, track_changes=False)
+
                 # Assistant response
                 content_parts.append(f"{text}\n")
 

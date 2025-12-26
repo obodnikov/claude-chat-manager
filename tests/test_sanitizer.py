@@ -495,3 +495,57 @@ class TestSanitizationReport:
         assert report.total_matches == 3
         assert report.by_category['api_key'] == 2
         assert report.by_category['token'] == 1
+
+
+class TestBookExportIntegration:
+    """Test integration with book export functionality."""
+
+    def test_book_export_with_sanitization(self):
+        """Test that book export correctly sanitizes sensitive data."""
+        from src.exporters import export_chat_book
+
+        # Create sample chat data with API key
+        chat_data = [
+            {
+                'message': {
+                    'role': 'user',
+                    'content': 'How do I use my API key sk-proj-abc123xyz789ABCDEFGH?'
+                },
+                'timestamp': '2025-12-26T10:00:00Z'
+            },
+            {
+                'message': {
+                    'role': 'assistant',
+                    'content': 'You can use it like this: export API_KEY=sk-proj-abc123xyz789ABCDEFGH'
+                },
+                'timestamp': '2025-12-26T10:00:01Z'
+            }
+        ]
+
+        # Export with sanitization enabled
+        output = export_chat_book(chat_data, sanitize=True)
+
+        # Verify API key was redacted
+        assert 'sk-proj-abc123xyz789ABCDEFGH' not in output
+        # Should contain partial redaction (default style is partial)
+        assert 'sk-pr***FGH' in output or '[API_KEY]' in output or 'REDACTED' in output
+
+    def test_book_export_without_sanitization(self):
+        """Test that book export preserves data when sanitization is disabled."""
+        from src.exporters import export_chat_book
+
+        chat_data = [
+            {
+                'message': {
+                    'role': 'user',
+                    'content': 'My key is sk-proj-abc123xyz789ABCDEFGH'
+                },
+                'timestamp': '2025-12-26T10:00:00Z'
+            }
+        ]
+
+        # Export with sanitization disabled
+        output = export_chat_book(chat_data, sanitize=False)
+
+        # Original key should be preserved
+        assert 'sk-proj-abc123xyz789ABCDEFGH' in output
