@@ -253,7 +253,8 @@ def export_chat_book(chat_data: List[Dict[str, Any]], sanitize: Optional[bool] =
 def export_chat_to_file(
     file_path: Path,
     output_path: Path,
-    format_type: str = 'markdown'
+    format_type: str = 'markdown',
+    sanitize: Optional[bool] = None
 ) -> None:
     """Export a chat file to specified format and save to file.
 
@@ -261,6 +262,7 @@ def export_chat_to_file(
         file_path: Path to the JSONL chat file.
         output_path: Path where to save the export.
         format_type: Export format (pretty, markdown, book, raw).
+        sanitize: Override .env sanitization setting (True/False/None).
 
     Raises:
         ExportError: If export operation fails.
@@ -271,7 +273,7 @@ def export_chat_to_file(
         if format_type == 'markdown':
             content = export_chat_markdown(chat_data)
         elif format_type == 'book':
-            content = export_chat_book(chat_data)
+            content = export_chat_book(chat_data, sanitize=sanitize)
         elif format_type == 'pretty':
             content = export_chat_pretty(chat_data)
         elif format_type == 'raw':
@@ -293,7 +295,8 @@ def export_project_chats(
     project_path: Path,
     export_dir: Path,
     format_type: str = 'markdown',
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    sanitize: Optional[bool] = None
 ) -> List[Path]:
     """Export all chats in a project to a directory.
 
@@ -301,12 +304,14 @@ def export_project_chats(
     - Filters out trivial/empty chats (configurable)
     - Generates descriptive filenames (configurable)
     - Applies content cleaning and filtering
+    - Optional sensitive data sanitization
 
     Args:
         project_path: Path to the project directory.
         export_dir: Directory where to save exports.
         format_type: Export format (markdown, book).
         api_key: OpenRouter API key for LLM title generation (optional).
+        sanitize: Override .env sanitization setting (True/False/None).
 
     Returns:
         List of exported file paths.
@@ -372,7 +377,7 @@ def export_project_chats(
 
             export_file = export_dir / f"{filename}.md"
 
-            export_chat_to_file(chat_file, export_file, format_type)
+            export_chat_to_file(chat_file, export_file, format_type, sanitize=sanitize)
             exported_files.append(export_file)
 
         logger.info(f"Exported {len(exported_files)} chats to {export_dir}")
@@ -618,7 +623,8 @@ def export_project_wiki(
     output_file: Path,
     use_llm: bool = True,
     api_key: Optional[str] = None,
-    update_mode: str = 'new'
+    update_mode: str = 'new',
+    sanitize: Optional[bool] = None
 ) -> None:
     """Export entire project as single wiki file with AI-generated titles.
 
@@ -628,6 +634,7 @@ def export_project_wiki(
         use_llm: Whether to use LLM for title generation.
         api_key: OpenRouter API key (required if use_llm=True).
         update_mode: Mode: 'new', 'update', or 'rebuild'.
+        sanitize: Override .env sanitization setting (True/False/None).
 
     Raises:
         ExportError: If export operation fails.
@@ -655,7 +662,7 @@ def export_project_wiki(
 
         # Generate wiki
         project_name = clean_project_name(project_path.name)
-        wiki_gen = WikiGenerator(llm_client=llm_client)
+        wiki_gen = WikiGenerator(llm_client=llm_client, sanitize=sanitize)
 
         # Pass existing wiki file for update/rebuild modes
         existing_wiki = output_file if update_mode in ['update', 'rebuild'] else None
