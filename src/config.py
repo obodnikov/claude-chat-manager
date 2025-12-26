@@ -369,6 +369,89 @@ class Config:
         value = os.getenv('BOOK_INCLUDE_DATE', 'true').lower()
         return value in ('true', '1', 'yes', 'on')
 
+    # Sanitization Settings
+
+    @property
+    def sanitize_enabled(self) -> bool:
+        """Check if sanitization is enabled.
+
+        Returns:
+            True if sanitization should be applied to exports.
+        """
+        value = os.getenv('SANITIZE_ENABLED', 'false').lower()
+        return value in ('true', '1', 'yes', 'on')
+
+    @property
+    def sanitize_level(self) -> str:
+        """Get the sanitization detection level.
+
+        Returns:
+            Sanitization level ('minimal', 'balanced', 'aggressive', 'custom').
+        """
+        level = os.getenv('SANITIZE_LEVEL', 'balanced').lower()
+        valid_levels = ['minimal', 'balanced', 'aggressive', 'custom']
+        if level not in valid_levels:
+            logger.warning(f"Invalid SANITIZE_LEVEL: {level}, using default 'balanced'")
+            return 'balanced'
+        return level
+
+    @property
+    def sanitize_style(self) -> str:
+        """Get the redaction style for sanitization.
+
+        Returns:
+            Redaction style ('simple', 'stars', 'labeled', 'partial', 'hash').
+        """
+        style = os.getenv('SANITIZE_STYLE', 'partial').lower()
+        valid_styles = ['simple', 'stars', 'labeled', 'partial', 'hash']
+        if style not in valid_styles:
+            logger.warning(f"Invalid SANITIZE_STYLE: {style}, using default 'partial'")
+            return 'partial'
+        return style
+
+    @property
+    def sanitize_paths(self) -> bool:
+        """Check if file paths should be sanitized.
+
+        Returns:
+            True if file paths should be redacted.
+        """
+        value = os.getenv('SANITIZE_PATHS', 'false').lower()
+        return value in ('true', '1', 'yes', 'on')
+
+    @property
+    def sanitize_custom_patterns(self) -> list:
+        """Get custom regex patterns for sanitization.
+
+        Returns:
+            List of custom regex pattern strings.
+        """
+        patterns = os.getenv('SANITIZE_CUSTOM_PATTERNS', '')
+        return [p.strip() for p in patterns.split(',') if p.strip()]
+
+    @property
+    def sanitize_allowlist(self) -> list:
+        """Get allowlist patterns that should never be sanitized.
+
+        Returns:
+            List of regex patterns to exclude from sanitization.
+        """
+        allowlist = os.getenv(
+            'SANITIZE_ALLOWLIST',
+            'example\\.com,localhost,127\\.0\\.0\\.1'
+        )
+        return [p.strip() for p in allowlist.split(',') if p.strip()]
+
+    @property
+    def sanitize_report(self) -> bool:
+        """Check if sanitization report should be generated.
+
+        Returns:
+            True if a sanitization report should be created.
+        """
+        value = os.getenv('SANITIZE_REPORT', 'false').lower()
+        return value in ('true', '1', 'yes', 'on')
+
 
 # Global configuration instance
 config = Config()
