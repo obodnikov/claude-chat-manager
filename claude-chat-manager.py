@@ -25,7 +25,122 @@ from src.cli import (
 )
 from src.projects import find_project_by_name
 from src.colors import print_colored, Colors
-from src.exceptions import ProjectNotFoundError
+from src.exceptions import ProjectNotFoundError, ExportError
+
+
+def perform_sanitize_preview(args: argparse.Namespace, project_path: Path) -> None:
+    """Perform sanitization preview on a project.
+
+    Args:
+        args: Parsed command-line arguments.
+        project_path: Path to the project directory.
+
+    Raises:
+        ExportError: If preview operation fails.
+    """
+    from src.sanitizer import Sanitizer
+    from src.parser import parse_jsonl_file
+
+    print_colored("🔍 Sanitization Preview Mode", Colors.CYAN)
+    print_colored("=" * 60, Colors.CYAN)
+
+    # Initialize sanitizer with CLI settings or .env defaults
+    sanitizer = Sanitizer(
+        level=args.sanitize_level,
+        style=args.sanitize_style,
+        sanitize_paths=args.sanitize_paths
+    )
+
+    # Get all chat files
+    chat_files = list(project_path.glob('*.jsonl'))
+    if not chat_files:
+        print_colored(f"⚠️  No chat files found in project '{args.project}'", Colors.YELLOW)
+        sys.exit(0)
+
+    total_matches = 0
+    files_with_secrets = 0
+    files_scanned = 0
+    files_skipped = 0
+
+    print(f"\nScanning {len(chat_files)} chat file(s) in project '{args.project}'...")
+    print(f"Configuration:")
+    print(f"  Level: {sanitizer.level}")
+    print(f"  Style: {sanitizer.style}")
+    print(f"  Sanitize paths: {sanitizer.sanitize_paths}")
+    print()
+
+    for chat_file in chat_files:
+        try:
+            chat_data = parse_jsonl_file(chat_file)
+            files_scanned += 1
+
+            # Combine all text from chat
+            # Check both 'text' and 'content' fields to handle variations
+            all_text = []
+            for entry in chat_data:
+                message = entry.get('message', {})
+                if message:
+                    # Get text from either 'text' or 'content' field
+                    text = message.get('text') or message.get('content', '')
+                    if text and isinstance(text, str):
+                        all_text.append(text)
+                    # Also check tool use content
+                    elif isinstance(text, list):
+                        for item in text:
+                            if isinstance(item, dict) and 'text' in item:
+                                all_text.append(item['text'])
+
+            if not all_text:
+                continue
+
+            combined_text = '\n'.join(all_text)
+            matches = sanitizer.find_sensitive_data(combined_text)
+
+            if matches:
+                files_with_secrets += 1
+                total_matches += len(matches)
+                print_colored(f"📄 {chat_file.name}: {len(matches)} secret(s) found", Colors.YELLOW)
+
+                # Show first few examples
+                for i, match in enumerate(matches[:3]):
+                    original = match.original_value
+                    redacted = match.redacted_value
+                    match_type = match.pattern_type
+
+                    # Truncate long values for display
+                    if len(original) > 50:
+                        original_display = original[:25] + '...' + original[-22:]
+                    else:
+                        original_display = original
+
+                    print(f"     {i+1}. [{match_type}] {original_display} → {redacted}")
+
+                if len(matches) > 3:
+                    print(f"     ... and {len(matches) - 3} more")
+                print()
+
+        except Exception as e:
+            files_skipped += 1
+            logging.warning(f"Failed to process {chat_file.name}: {e}")
+            print_colored(f"⚠️  Skipped {chat_file.name}: {str(e)}", Colors.YELLOW)
+            continue
+
+    # Summary
+    print_colored("=" * 60, Colors.CYAN)
+    print_colored("📊 Summary", Colors.CYAN)
+    print(f"Files scanned: {files_scanned}")
+    if files_skipped > 0:
+        print(f"Files skipped (errors): {files_skipped}")
+    print(f"Files with secrets: {files_with_secrets}")
+    print(f"Total secrets found: {total_matches}")
+    print()
+
+    if total_matches > 0:
+        print_colored("⚠️  Sensitive data detected!", Colors.YELLOW)
+        print("Use --sanitize flag to sanitize exports, or use sanitize-chats.py")
+        print("to sanitize existing exported files.")
+    else:
+        print_colored("✅ No sensitive data detected", Colors.GREEN)
 
 
 def setup_logging() -> None:
@@ -71,6 +186,12 @@ Examples:
   %(prog)s "my-project" --wiki wiki.md --rebuild  # Force full rebuild of existing wiki
   %(prog)s -c "update checker"                    # Search chat content
 
+Sanitization Examples:
+  %(prog)s "my-project" -f book -o exports/ --sanitize            # Enable sanitization
+  %(prog)s "my-project" --wiki wiki.md --sanitize-preview         # Preview what would be sanitized
+  %(prog)s "my-project" -f book -o exports/ --sanitize-level aggressive --sanitize-style labeled
+  %(prog)s "my-project" -f book -o exports/ --sanitize --sanitize-report report.txt
+
 Output Behavior:
   -o dirname       # Export to directory 'dirname/'
   -o dirname/      # Export to directory 'dirname/'
@@ -80,6 +201,9 @@ Environment Variables:
   CLAUDE_PROJECTS_DIR    # Custom Claude projects directory
   CLAUDE_LOG_LEVEL       # Logging level (DEBUG, INFO, WARNING, ERROR)
   CLAUDE_DEFAULT_FORMAT  # Default export format
+  SANITIZE_ENABLED       # Enable sanitization (true/false)
+  SANITIZE_LEVEL         # Sanitization level (minimal/balanced/aggressive/custom)
+  SANITIZE_STYLE         # Redaction style (simple/stars/labeled/partial/hash)
         """
     )
 
@@ -97,7 +221,38 @@ Environment Variables:
     parser.add_argument('--rebuild', action='store_true', help='Force full rebuild of existing wiki file (use with --wiki)')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging')
 
+    # Sanitization options
+    sanitize_group = parser.add_argument_group('Sensitive Data Sanitization')
+    sanitize_group.add_argument('--sanitize', action='store_true',
+                               help='Enable sanitization of sensitive data (API keys, tokens, passwords, etc.)')
+    sanitize_group.add_argument('--no-sanitize', action='store_true',
+                               help='Disable sanitization (override .env setting)')
+    sanitize_group.add_argument('--sanitize-level',
+                               choices=['minimal', 'balanced', 'aggressive', 'custom'],
+                               help='Sanitization detection level (default: from .env or balanced)')
+    sanitize_group.add_argument('--sanitize-style',
+                               choices=['simple', 'stars', 'labeled', 'partial', 'hash'],
+                               help='Redaction style (default: from .env or partial)')
+    sanitize_group.add_argument('--sanitize-paths', action='store_true',
+                               help='Sanitize file paths (e.g., /Users/mike → /Users/[USER])')
+    sanitize_group.add_argument('--sanitize-preview', action='store_true',
+                               help='Preview what would be sanitized without exporting')
+    sanitize_group.add_argument('--sanitize-report', metavar='FILE', type=Path,
+                               help='Generate sanitization report to specified file')
+
     args = parser.parse_args()
+
+    # Validate mutually exclusive sanitization options
+    if args.sanitize and args.no_sanitize:
+        parser.error("Cannot specify both --sanitize and --no-sanitize")
+
+    # Determine sanitization setting (CLI overrides .env)
+    sanitize_enabled = None
+    if args.sanitize:
+        sanitize_enabled = True
+    elif args.no_sanitize:
+        sanitize_enabled = False
+    # else: None means use .env setting
 
     # Setup logging
     if args.verbose:
@@ -133,6 +288,11 @@ Environment Variables:
             project_path = find_project_by_name(args.project)
 
             if project_path and project_path.exists():
+                # Handle sanitization preview mode
+                if args.sanitize_preview:
+                    perform_sanitize_preview(args, project_path)
+                    sys.exit(0)
+
                 # Handle wiki format specially
                 wiki_output = args.wiki if args.wiki else (args.output if args.format == 'wiki' else None)
 
@@ -177,7 +337,8 @@ Environment Variables:
                         wiki_output,
                         use_llm,
                         api_key,
-                        update_mode=mode
+                        update_mode=mode,
+                        sanitize=sanitize_enabled
                     )
 
                     size = wiki_output.stat().st_size
@@ -219,7 +380,12 @@ Environment Variables:
 
                     # Create directory and export
                     export_dir.mkdir(parents=True, exist_ok=True)
-                    exported_files = export_project_chats(project_path, export_dir, args.format)
+                    exported_files = export_project_chats(
+                        project_path,
+                        export_dir,
+                        args.format,
+                        sanitize=sanitize_enabled
+                    )
                     print_colored(f"✅ Exported {len(exported_files)} chats to: {export_dir}/", Colors.GREEN)
                     for file in exported_files:
                         size = file.stat().st_size
