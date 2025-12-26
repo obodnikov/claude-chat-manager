@@ -191,7 +191,7 @@ class TestSanitizationPreviewMode:
         mock_sanitizer.level = 'balanced'
         mock_sanitizer.style = 'partial'
         mock_sanitizer.sanitize_paths = False
-        mock_sanitizer.find_sensitive_data.return_value = []
+        mock_sanitizer.preview_sanitization.return_value = []
         mock_sanitizer_class.return_value = mock_sanitizer
 
         # Setup mock parser
@@ -240,7 +240,7 @@ class TestSanitizationPreviewMode:
         mock_sanitizer.level = 'balanced'
         mock_sanitizer.style = 'partial'
         mock_sanitizer.sanitize_paths = False
-        mock_sanitizer.find_sensitive_data.return_value = []
+        mock_sanitizer.preview_sanitization.return_value = []
         mock_sanitizer_class.return_value = mock_sanitizer
 
         # Setup mock parser
@@ -286,7 +286,7 @@ class TestSanitizationPreviewMode:
         mock_sanitizer.level = 'balanced'
         mock_sanitizer.style = 'partial'
         mock_sanitizer.sanitize_paths = False
-        mock_sanitizer.find_sensitive_data.return_value = [
+        mock_sanitizer.preview_sanitization.return_value = [
             SanitizationMatch(
                 pattern_type='API Key',
                 original_value='sk-proj-abc123xyz789012345678901234567890',
@@ -299,7 +299,7 @@ class TestSanitizationPreviewMode:
         mock_sanitizer_class.return_value = mock_sanitizer
 
         # Verify match attributes
-        matches = mock_sanitizer.find_sensitive_data('test')
+        matches = mock_sanitizer.preview_sanitization('test')
         assert len(matches) == 1
         assert matches[0].pattern_type == 'API Key'
         assert matches[0].redacted_value == 'sk-pr***890'

@@ -45,11 +45,16 @@ def perform_sanitize_preview(args: argparse.Namespace, project_path: Path) -> No
     print_colored("=" * 60, Colors.CYAN)
 
     # Initialize sanitizer with CLI settings or .env defaults
-    sanitizer = Sanitizer(
-        level=args.sanitize_level,
-        style=args.sanitize_style,
-        sanitize_paths=args.sanitize_paths
-    )
+    # Only pass arguments if they were explicitly set
+    sanitizer_kwargs = {}
+    if args.sanitize_level:
+        sanitizer_kwargs['level'] = args.sanitize_level
+    if args.sanitize_style:
+        sanitizer_kwargs['style'] = args.sanitize_style
+    if args.sanitize_paths:
+        sanitizer_kwargs['sanitize_paths'] = args.sanitize_paths
+
+    sanitizer = Sanitizer(**sanitizer_kwargs)
 
     # Get all chat files
     chat_files = list(project_path.glob('*.jsonl'))
@@ -94,7 +99,7 @@ def perform_sanitize_preview(args: argparse.Namespace, project_path: Path) -> No
                 continue
 
             combined_text = '\n'.join(all_text)
-            matches = sanitizer.find_sensitive_data(combined_text)
+            matches = sanitizer.preview_sanitization(combined_text)
 
             if matches:
                 files_with_secrets += 1
