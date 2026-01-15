@@ -598,35 +598,22 @@ def export_project_chats(
         for chat_file in chat_files:
             # Parse chat data for filtering and title generation
             try:
-                if source == ChatSource.KIRO_IDE:
-                    kiro_session = parse_kiro_chat_file(chat_file)
-                    # Convert KiroChatSession messages to ChatMessage objects
-                    chat_data = []
-                    for msg in kiro_session.messages:
-                        role = msg.get('role', 'unknown')
-                        content = msg.get('content', '')
-                        chat_data.append(ChatMessage(
-                            role=role,
-                            content=content,
-                            source=ChatSource.KIRO_IDE,
-                            execution_id=kiro_session.execution_id
-                        ))
-                else:
-                    chat_data = parse_jsonl_file(chat_file)
+                # Use _load_chat_data for consistent parsing and conversion
+                chat_data, detected_source = _load_chat_data(chat_file)
             except Exception as e:
                 logger.warning(f"Failed to parse chat file {chat_file.name}: {e}, skipping")
                 continue
 
             # Filter trivial chats for book format (only for Claude Desktop format)
-            # Kiro uses ChatMessage objects which the filter doesn't support yet
+            # Kiro dict format may have different structure that filter doesn't handle well
             if chat_filter and source != ChatSource.KIRO_IDE and chat_filter.is_pointless_chat(chat_data):
                 logger.info(f"Filtering out trivial chat: {chat_file.name}")
                 filtered_count += 1
                 continue
 
             # Generate filename
-            if format_type == 'book' and config.book_generate_titles and source != ChatSource.KIRO_IDE:
-                # Title generation only works with Claude Desktop format for now
+            if format_type == 'book' and config.book_generate_titles:
+                # Title generation works for both Claude Desktop and Kiro IDE formats
                 filename = _generate_book_filename(
                     chat_data,
                     chat_file,
@@ -638,8 +625,21 @@ def export_project_chats(
 
             export_file = export_dir / f"{filename}.md"
 
-            export_chat_to_file(chat_file, export_file, format_type, sanitize=sanitize)
-            exported_files.append(export_file)
+            # Export using the already-parsed data to avoid re-parsing
+            try:
+                if format_type == 'markdown':
+                    content = export_chat_markdown(chat_data)
+                elif format_type == 'book':
+                    content = export_chat_book(chat_data, sanitize=sanitize)
+                else:
+                    content = export_chat_markdown(chat_data)
+                
+                with open(export_file, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                exported_files.append(export_file)
+            except Exception as e:
+                logger.warning(f"Failed to export chat file {chat_file.name}: {e}, skipping")
+                continue
 
         logger.info(f"Exported {len(exported_files)} chats to {export_dir}")
         if filtered_count > 0:

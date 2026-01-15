@@ -310,9 +310,11 @@ The `--source` flag takes precedence over the `CHAT_SOURCE` environment variable
 workspace-sessions/
 ├── {base64-encoded-workspace-path}/
 │   ├── sessions.json           # Session metadata
-│   ├── {session-id}.json       # Session history
+│   ├── {session-id}.json       # Session chat history (UUID-based)
 │   └── ...
 ```
+
+Note: Session files use `.json` extension with UUID-based filenames (e.g., `6f77fc91-dac4-4a08-bb6d-a0a0170a7c52.json`).
 
 ### sessions.json Format
 
