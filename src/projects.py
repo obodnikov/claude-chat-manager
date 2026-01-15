@@ -126,7 +126,7 @@ def list_all_projects(source_filter: Optional[ChatSource] = None) -> List[Projec
     return projects
 
 
-def find_project_by_name(project_name: str, source_filter: Optional[ChatSource] = None) -> Optional[Path]:
+def find_project_by_name(project_name: str, source_filter: Optional[ChatSource] = None) -> Optional[ProjectInfo]:
     """Find a project by name (supports both clean and original names).
 
     Args:
@@ -134,7 +134,7 @@ def find_project_by_name(project_name: str, source_filter: Optional[ChatSource] 
         source_filter: Filter by source (None = all sources, ChatSource.CLAUDE_DESKTOP, ChatSource.KIRO_IDE).
 
     Returns:
-        Path to the project directory if found, None otherwise.
+        ProjectInfo object if found, None otherwise.
     """
     # Determine which sources to search
     # None means search all sources (consistent with list_all_projects)
@@ -151,7 +151,16 @@ def find_project_by_name(project_name: str, source_filter: Optional[ChatSource] 
                     if (clean_name.lower() == project_name.lower() or
                             project_dir.name.lower() == project_name.lower()):
                         logger.debug(f"Found Claude project: {project_dir}")
-                        return project_dir
+                        # Return ProjectInfo with source information
+                        file_count = len(list(project_dir.glob('*.jsonl')))
+                        return ProjectInfo(
+                            name=clean_name,
+                            path=project_dir,
+                            file_count=file_count,
+                            total_messages=0,  # Not calculated for single project lookup
+                            last_modified="",
+                            source=ChatSource.CLAUDE_DESKTOP
+                        )
     
     # Search Kiro IDE projects
     if search_kiro:
@@ -164,13 +173,32 @@ def find_project_by_name(project_name: str, source_filter: Optional[ChatSource] 
                     # Match against workspace name
                     if workspace.workspace_name.lower() == project_name.lower():
                         logger.debug(f"Found Kiro workspace: {workspace.workspace_path}")
-                        return Path(workspace.workspace_path)
+                        # Return ProjectInfo for Kiro workspace
+                        return ProjectInfo(
+                            name=workspace.workspace_name,
+                            path=Path(workspace.workspace_path),
+                            file_count=workspace.session_count,
+                            total_messages=0,  # Not calculated for single project lookup
+                            last_modified=workspace.last_modified,
+                            source=ChatSource.KIRO_IDE,
+                            workspace_path=workspace.workspace_path,
+                            session_ids=[s.session_id for s in workspace.sessions]
+                        )
                     
                     # Also try matching against the base name of the path
                     workspace_basename = Path(workspace.workspace_path).name
                     if workspace_basename.lower() == project_name.lower():
                         logger.debug(f"Found Kiro workspace by path: {workspace.workspace_path}")
-                        return Path(workspace.workspace_path)
+                        return ProjectInfo(
+                            name=workspace.workspace_name,
+                            path=Path(workspace.workspace_path),
+                            file_count=workspace.session_count,
+                            total_messages=0,
+                            last_modified=workspace.last_modified,
+                            source=ChatSource.KIRO_IDE,
+                            workspace_path=workspace.workspace_path,
+                            session_ids=[s.session_id for s in workspace.sessions]
+                        )
             except Exception as e:
                 logger.warning(f"Error searching Kiro projects: {e}")
     
@@ -227,21 +255,29 @@ def get_recent_projects(count: int = 10, source_filter: Optional[ChatSource] = N
         return []
 
 
-def get_project_chat_files(project_path: Path) -> List[Path]:
-    """Get all JSONL chat files in a project.
+def get_project_chat_files(project_path: Path, source: ChatSource = ChatSource.CLAUDE_DESKTOP) -> List[Path]:
+    """Get all chat files in a project based on source type.
 
     Args:
         project_path: Path to the project directory.
+        source: Chat source type (Claude Desktop or Kiro IDE).
 
     Returns:
-        Sorted list of JSONL file paths.
+        Sorted list of chat file paths.
     """
     if not project_path.exists() or not project_path.is_dir():
         logger.error(f"Invalid project path: {project_path}")
         return []
 
-    chat_files = list(project_path.glob('*.jsonl'))
+    if source == ChatSource.KIRO_IDE:
+        # For Kiro, look for .chat files (Kiro session files)
+        chat_files = list(project_path.glob('*.chat'))
+        # No need to filter - all .chat files are session files
+    else:
+        # For Claude Desktop, look for JSONL files
+        chat_files = list(project_path.glob('*.jsonl'))
+    
     chat_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
 
-    logger.debug(f"Found {len(chat_files)} chat files in {project_path.name}")
+    logger.debug(f"Found {len(chat_files)} chat files in {project_path.name} (source: {source.value})")
     return chat_files

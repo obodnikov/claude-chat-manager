@@ -494,6 +494,7 @@ class TestMainFunction:
 class TestErrorHandling:
     """Test error handling and edge cases."""
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows handles permissions differently")
     def test_write_file_permission_denied(self, temp_dir):
         """Test write_file with permission denied."""
         import stat
@@ -516,6 +517,7 @@ class TestErrorHandling:
             # Restore permissions
             temp_dir.chmod(stat.S_IRWXU)
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows handles permissions differently")
     def test_read_file_permission_denied(self, temp_dir, capsys):
         """Test read_file with permission denied."""
         import stat

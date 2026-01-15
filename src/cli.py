@@ -12,6 +12,7 @@ import logging
 
 from .config import config
 from .colors import Colors, print_colored
+from .models import ProjectInfo, ChatSource
 from .projects import (
     list_all_projects,
     find_project_by_name,
@@ -219,20 +220,21 @@ def view_chat_file(file_path: Path, format_type: str = 'pretty', output_file: Op
         logger.error(f"Error viewing chat file {file_path}: {e}")
 
 
-def browse_project_interactive(project_path: Path) -> bool:
+def browse_project_interactive(project_info: ProjectInfo) -> bool:
     """Browse a project interactively.
 
     Args:
-        project_path: Path to the project directory.
+        project_info: ProjectInfo object containing project details and source.
 
     Returns:
         True to return to main menu, False to quit.
     """
-    project_name = clean_project_name(project_path.name)
-    chat_files = get_project_chat_files(project_path)
+    project_name = clean_project_name(project_info.path.name)
+    chat_files = get_project_chat_files(project_info.path, project_info.source)
 
     if not chat_files:
-        print_colored(f"No JSONL chat files found in project: {project_name}", Colors.YELLOW)
+        file_type = ".chat" if project_info.source == ChatSource.KIRO_IDE else "JSONL"
+        print_colored(f"No {file_type} chat files found in project: {project_name}", Colors.YELLOW)
         return True
 
     def display_menu():
@@ -497,7 +499,7 @@ def interactive_browser(source_filter: Optional[ChatSource] = None) -> None:
                     choice_num = int(choice)
                     if 1 <= choice_num <= len(projects):
                         print()
-                        should_continue = browse_project_interactive(projects[choice_num - 1].path)
+                        should_continue = browse_project_interactive(projects[choice_num - 1])
                         if should_continue:
                             print()
                             # Break inner loop to redisplay menu

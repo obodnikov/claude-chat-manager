@@ -309,12 +309,12 @@ Environment Variables:
             display_recent_projects(args.recent, source_filter)
         elif args.project:
             # Browse specific project
-            project_path = find_project_by_name(args.project, source_filter)
+            project_info = find_project_by_name(args.project, source_filter)
 
-            if project_path and project_path.exists():
+            if project_info and project_info.path.exists():
                 # Handle sanitization preview mode
                 if args.sanitize_preview:
-                    perform_sanitize_preview(args, project_path)
+                    perform_sanitize_preview(args, project_info.path)
                     sys.exit(0)
 
                 # Handle wiki format specially
@@ -357,7 +357,7 @@ Environment Variables:
                     # Export wiki (pass mode for update/rebuild logic)
                     wiki_output.parent.mkdir(parents=True, exist_ok=True)
                     export_project_wiki(
-                        project_path,
+                        project_info.path,
                         wiki_output,
                         use_llm,
                         api_key,
@@ -405,7 +405,7 @@ Environment Variables:
                     # Create directory and export
                     export_dir.mkdir(parents=True, exist_ok=True)
                     exported_files = export_project_chats(
-                        project_path,
+                        project_info.path,
                         export_dir,
                         args.format,
                         sanitize=sanitize_enabled
@@ -416,7 +416,7 @@ Environment Variables:
                         print(f"   {file.name} ({size/1024:.1f}KB)")
                 else:
                     # Interactive mode
-                    browse_project_interactive(project_path)
+                    browse_project_interactive(project_info)
             else:
                 print_colored(f"Project not found: {args.project}", Colors.RED)
                 print("Available projects:")

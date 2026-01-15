@@ -418,17 +418,21 @@ class TestFindProjectByName:
             
             with patch('pathlib.Path.exists', return_value=True), \
                  patch('pathlib.Path.is_dir', return_value=True), \
-                 patch('pathlib.Path.iterdir') as mock_iterdir:
+                 patch('pathlib.Path.iterdir') as mock_iterdir, \
+                 patch('pathlib.Path.glob', return_value=[]):
                 
                 mock_project_dir = Mock(spec=Path)
                 mock_project_dir.name = 'test-project'
                 mock_project_dir.is_dir.return_value = True
+                mock_project_dir.glob.return_value = []
                 mock_iterdir.return_value = [mock_project_dir]
                 
                 from src.projects import find_project_by_name
                 result = find_project_by_name('test-project', ChatSource.CLAUDE_DESKTOP)
                 
-                assert result == mock_project_dir
+                assert result is not None
+                assert result.source == ChatSource.CLAUDE_DESKTOP
+                assert result.path == mock_project_dir
 
     def test_find_kiro_project_by_name(self):
         """Test finding a Kiro project by name.
@@ -451,7 +455,9 @@ class TestFindProjectByName:
                 from src.projects import find_project_by_name
                 result = find_project_by_name('kiro-workspace', ChatSource.KIRO_IDE)
                 
-                assert result == Path('/path/to/workspace')
+                assert result is not None
+                assert result.source == ChatSource.KIRO_IDE
+                assert result.path == Path('/path/to/workspace')
 
     def test_find_project_not_found(self):
         """Test behavior when project is not found.
@@ -485,11 +491,13 @@ class TestFindProjectByName:
             # Setup Claude project
             with patch('pathlib.Path.exists', return_value=True), \
                  patch('pathlib.Path.is_dir', return_value=True), \
-                 patch('pathlib.Path.iterdir') as mock_iterdir:
+                 patch('pathlib.Path.iterdir') as mock_iterdir, \
+                 patch('pathlib.Path.glob', return_value=[]):
                 
                 mock_project_dir = Mock(spec=Path)
                 mock_project_dir.name = 'claude-project'
                 mock_project_dir.is_dir.return_value = True
+                mock_project_dir.glob.return_value = []
                 mock_iterdir.return_value = [mock_project_dir]
                 
                 from src.projects import find_project_by_name
@@ -497,7 +505,9 @@ class TestFindProjectByName:
                 result = find_project_by_name('claude-project')
                 
                 # Should find Claude project
-                assert result == mock_project_dir
+                assert result is not None
+                assert result.source == ChatSource.CLAUDE_DESKTOP
+                assert result.path == mock_project_dir
     
     def test_find_project_searches_kiro_when_not_in_claude(self):
         """Test that when project not in Claude, it searches Kiro (when source is None).
@@ -528,7 +538,9 @@ class TestFindProjectByName:
                     result = find_project_by_name('kiro-only-project')
                     
                     # Should find Kiro project
-                    assert result == Path('/path/to/kiro/project')
+                    assert result is not None
+                    assert result.source == ChatSource.KIRO_IDE
+                    assert result.path == Path('/path/to/kiro/project')
 
 
 if __name__ == '__main__':
