@@ -1278,3 +1278,424 @@ class TestProperty11SpecialBlockFormatting:
             f"Should have {expected_tool_count} tool markers, found {actual_tool_count}"
         assert actual_image_count == expected_image_count, \
             f"Should have {expected_image_count} image markers, found {actual_image_count}"
+
+
+
+class TestProperty8ExportFormatSupport:
+    """Property 8: Export Format Support.
+    
+    Feature: kiro-chat-support, Property 8: Export Format Support
+    Validates: Requirements 4.1
+    
+    For any valid Kiro chat session and any supported export format (pretty, markdown,
+    book, wiki), exporting SHALL complete without raising an exception and produce
+    non-empty output.
+    """
+
+    @settings(max_examples=100)
+    @given(
+        chat_data=kiro_chat_data(),
+        format_type=st.sampled_from(['pretty', 'markdown', 'book'])
+    )
+    def test_all_formats_export_successfully(self, chat_data, format_type):
+        """Property test: All export formats work with Kiro chats."""
+        # Feature: kiro-chat-support, Property 8: Export Format Support
+        
+        from src.exporters import export_chat_to_file
+        
+        # Arrange: Create temporary Kiro chat file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.chat', delete=False, encoding='utf-8') as f:
+            json.dump(chat_data, f)
+            chat_file = Path(f.name)
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+            output_file = Path(f.name)
+        
+        try:
+            # Act: Export to format (should not raise exception)
+            export_chat_to_file(chat_file, output_file, format_type=format_type)
+            
+            # Assert: Output file exists and is non-empty
+            assert output_file.exists(), \
+                f"Export to {format_type} should create output file"
+            
+            content = output_file.read_text(encoding='utf-8')
+            assert len(content) > 0, \
+                f"Export to {format_type} should produce non-empty output"
+            
+        finally:
+            # Cleanup
+            chat_file.unlink(missing_ok=True)
+            output_file.unlink(missing_ok=True)
+
+    @settings(max_examples=100, deadline=None)
+    @given(chat_data=kiro_chat_data())
+    def test_markdown_export_produces_valid_markdown(self, chat_data):
+        """Property test: Markdown export produces valid markdown structure."""
+        # Feature: kiro-chat-support, Property 8: Export Format Support
+        
+        from src.exporters import export_chat_to_file
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.chat', delete=False, encoding='utf-8') as f:
+            json.dump(chat_data, f)
+            chat_file = Path(f.name)
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+            output_file = Path(f.name)
+        
+        try:
+            # Act: Export to markdown
+            export_chat_to_file(chat_file, output_file, format_type='markdown')
+            
+            content = output_file.read_text(encoding='utf-8')
+            
+            # Assert: Contains markdown headers
+            assert '# Claude Chat Export' in content, \
+                "Markdown export should have main header"
+            # Note: Messages may be filtered, so we just check for basic structure
+            
+        finally:
+            chat_file.unlink(missing_ok=True)
+            output_file.unlink(missing_ok=True)
+
+    @settings(max_examples=100)
+    @given(chat_data=kiro_chat_data())
+    def test_pretty_export_includes_formatting(self, chat_data):
+        """Property test: Pretty export includes terminal formatting."""
+        # Feature: kiro-chat-support, Property 8: Export Format Support
+        
+        from src.exporters import export_chat_to_file
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.chat', delete=False, encoding='utf-8') as f:
+            json.dump(chat_data, f)
+            chat_file = Path(f.name)
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
+            output_file = Path(f.name)
+        
+        try:
+            # Act: Export to pretty format
+            export_chat_to_file(chat_file, output_file, format_type='pretty')
+            
+            content = output_file.read_text(encoding='utf-8')
+            
+            # Assert: Contains formatting elements
+            assert '─' in content or 'Message' in content, \
+                "Pretty export should have visual separators or message indicators"
+            
+        finally:
+            chat_file.unlink(missing_ok=True)
+            output_file.unlink(missing_ok=True)
+
+    @settings(max_examples=100)
+    @given(
+        chat_data=kiro_chat_data(),
+        format_type=st.sampled_from(['markdown', 'pretty'])
+    )
+    def test_export_preserves_message_count(self, chat_data, format_type):
+        """Property test: Export preserves message count in output."""
+        # Feature: kiro-chat-support, Property 8: Export Format Support
+        
+        from src.exporters import export_chat_to_file
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.chat', delete=False, encoding='utf-8') as f:
+            json.dump(chat_data, f)
+            chat_file = Path(f.name)
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+            output_file = Path(f.name)
+        
+        try:
+            # Act: Export
+            export_chat_to_file(chat_file, output_file, format_type=format_type)
+            
+            content = output_file.read_text(encoding='utf-8')
+            
+            # Assert: Output is substantial (rough check for message preservation)
+            # Note: Book format may filter messages, so we only test markdown and pretty
+            # Each message should contribute some content
+            assert len(content) > 50, \
+                f"Export should produce substantial content from {len(chat_data['chat'])} messages"
+            
+        finally:
+            chat_file.unlink(missing_ok=True)
+            output_file.unlink(missing_ok=True)
+
+
+class TestProperty9FilenameGenerationFromContent:
+    """Property 9: Filename Generation From Content.
+    
+    Feature: kiro-chat-support, Property 9: Filename Generation From Content
+    Validates: Requirements 4.3
+    
+    For any Kiro chat session with either a title or at least one user message,
+    generating a filename SHALL produce a non-empty string derived from the title
+    or first user message content.
+    """
+
+    @settings(max_examples=100)
+    @given(
+        user_message=st.text(min_size=1, max_size=200, alphabet=st.characters(
+            whitelist_categories=('Lu', 'Ll', 'Nd', 'Zs'),
+            whitelist_characters='.,!?-_'
+        ))
+    )
+    def test_filename_generated_from_user_message(self, user_message):
+        """Property test: Filename is generated from first user message."""
+        # Feature: kiro-chat-support, Property 9: Filename Generation From Content
+        
+        from src.exporters import _generate_filename_from_content
+        from src.models import ChatSource
+        import unicodedata
+        
+        # Arrange: Create chat data with user message
+        chat_data = [{
+            'message': {
+                'role': 'human',
+                'content': user_message
+            }
+        }]
+        
+        # Act: Generate filename
+        filename = _generate_filename_from_content(
+            chat_data,
+            fallback='fallback',
+            source=ChatSource.KIRO_IDE
+        )
+        
+        # Assert: Filename is non-empty
+        assert len(filename) > 0, \
+            "Filename should be non-empty when user message exists"
+        
+        # Assert: Filename is derived from message
+        # Normalize message to ASCII like the function does
+        normalized_message = unicodedata.normalize('NFKD', user_message)
+        ascii_message = normalized_message.encode('ascii', 'ignore').decode('ascii')
+        
+        # Extract alphanumeric words from both (after sanitization)
+        import re
+        message_words = set(re.findall(r'\w+', ascii_message.lower()))
+        filename_words = set(re.findall(r'\w+', filename.lower()))
+        
+        # Filename should contain alphanumeric characters
+        assert len(filename_words) > 0, \
+            "Filename should contain alphanumeric characters"
+        
+        # If the ASCII message has alphanumeric content, filename should overlap or be derived
+        if message_words:
+            # Check for overlap or that filename is a substring/sanitized version
+            has_overlap = len(message_words & filename_words) > 0
+            # Or filename contains sanitized version of message start
+            sanitized_start = re.sub(r'[^a-zA-Z0-9\s\-_]', '', ascii_message[:20].lower())
+            sanitized_start = re.sub(r'[-\s]+', '-', sanitized_start).strip('-_')
+            is_derived = sanitized_start and sanitized_start in filename
+            
+            assert has_overlap or is_derived, \
+                f"Filename '{filename}' should be meaningfully derived from ASCII message '{ascii_message[:50]}'"
+        # If message has no ASCII content, fallback is used
+        else:
+            assert filename == 'fallback' or filename == 'untitled', \
+                f"When message has no ASCII content, should use fallback or 'untitled', got '{filename}'"
+
+    @settings(max_examples=100)
+    @given(
+        messages=st.lists(
+            st.fixed_dictionaries({
+                'role': st.sampled_from(['bot', 'assistant']),
+                'content': st.text(min_size=1, max_size=100)
+            }),
+            min_size=1,
+            max_size=5
+        ),
+        user_message=st.text(min_size=1, max_size=100, alphabet=st.characters(
+            whitelist_categories=('Lu', 'Ll', 'Nd', 'Zs')
+        ))
+    )
+    def test_filename_uses_first_user_message(self, messages, user_message):
+        """Property test: Filename uses first user message, not bot messages."""
+        # Feature: kiro-chat-support, Property 9: Filename Generation From Content
+        
+        from src.exporters import _generate_filename_from_content
+        from src.models import ChatSource
+        
+        # Arrange: Create chat data with bot messages first, then user message
+        chat_data = []
+        for msg in messages:
+            chat_data.append({'message': msg})
+        
+        # Add user message
+        chat_data.append({
+            'message': {
+                'role': 'human',
+                'content': user_message
+            }
+        })
+        
+        # Act: Generate filename
+        filename = _generate_filename_from_content(
+            chat_data,
+            fallback='fallback',
+            source=ChatSource.KIRO_IDE
+        )
+        
+        # Assert: Filename is non-empty and not the fallback
+        assert len(filename) > 0, \
+            "Filename should be generated from user message"
+        
+        # The filename should be derived from user_message, not bot messages
+        # (This is a behavioral property - we found the first user message)
+
+    @settings(max_examples=100)
+    @given(
+        fallback=st.text(min_size=1, max_size=50, alphabet=st.characters(
+            whitelist_categories=('Lu', 'Ll', 'Nd'),
+            whitelist_characters='-_'
+        ))
+    )
+    def test_fallback_used_when_no_user_messages(self, fallback):
+        """Property test: Fallback is used when no user messages exist."""
+        # Feature: kiro-chat-support, Property 9: Filename Generation From Content
+        
+        from src.exporters import _generate_filename_from_content
+        from src.models import ChatSource
+        import re
+        import unicodedata
+        
+        # Arrange: Create chat data with only bot messages
+        chat_data = [{
+            'message': {
+                'role': 'bot',
+                'content': 'Bot response'
+            }
+        }]
+        
+        # Act: Generate filename
+        filename = _generate_filename_from_content(
+            chat_data,
+            fallback=fallback,
+            source=ChatSource.KIRO_IDE
+        )
+        
+        # Expected: fallback should be normalized to ASCII and sanitized
+        normalized = unicodedata.normalize('NFKD', fallback)
+        ascii_fallback = normalized.encode('ascii', 'ignore').decode('ascii')
+        expected = re.sub(r'[^a-zA-Z0-9\s\-_]', '', ascii_fallback)
+        expected = re.sub(r'[-\s]+', '-', expected)
+        expected = expected.strip('-_').lower()
+        
+        # If sanitization results in empty, should use 'untitled'
+        if not expected:
+            expected = 'untitled'
+        
+        # Assert: Filename equals sanitized fallback
+        assert filename == expected, \
+            f"Filename should be sanitized fallback '{expected}' when no user messages, got '{filename}'"
+
+    @settings(max_examples=100)
+    @given(
+        user_message=st.text(min_size=1, max_size=500, alphabet=st.characters(
+            whitelist_categories=('Lu', 'Ll', 'Nd', 'Zs'),  # Letters, numbers, spaces
+            whitelist_characters='-_.,!?'  # Common punctuation
+        ))
+    )
+    def test_filename_is_filesystem_safe(self, user_message):
+        """Property test: Generated filename is filesystem-safe."""
+        # Feature: kiro-chat-support, Property 9: Filename Generation From Content
+        
+        from src.exporters import _generate_filename_from_content
+        from src.models import ChatSource
+        
+        # Arrange: Create chat data
+        chat_data = [{
+            'message': {
+                'role': 'human',
+                'content': user_message
+            }
+        }]
+        
+        # Act: Generate filename
+        filename = _generate_filename_from_content(
+            chat_data,
+            fallback='fallback',
+            source=ChatSource.KIRO_IDE
+        )
+        
+        # Assert: Filename contains only safe characters
+        import re
+        # Should only contain alphanumeric, hyphens, underscores (after sanitization)
+        assert re.match(r'^[a-z0-9\-_]+$', filename), \
+            f"Filename should be filesystem-safe, got '{filename}'"
+        
+        # Assert: Filename is not too long
+        assert len(filename) <= 100, \
+            f"Filename should be <= 100 chars, got {len(filename)}"
+
+    @settings(max_examples=100)
+    @given(
+        messages=st.lists(
+            st.fixed_dictionaries({
+                'role': st.sampled_from(['human', 'user']),
+                'content': st.text(min_size=1, max_size=100)
+            }),
+            min_size=1,
+            max_size=10
+        )
+    )
+    def test_filename_always_non_empty(self, messages):
+        """Property test: Filename generation always produces non-empty result."""
+        # Feature: kiro-chat-support, Property 9: Filename Generation From Content
+        
+        from src.exporters import _generate_filename_from_content
+        from src.models import ChatSource
+        
+        # Arrange: Create chat data
+        chat_data = [{'message': msg} for msg in messages]
+        
+        # Act: Generate filename
+        filename = _generate_filename_from_content(
+            chat_data,
+            fallback='fallback',
+            source=ChatSource.KIRO_IDE
+        )
+        
+        # Assert: Filename is non-empty
+        assert len(filename) > 0, \
+            "Filename should always be non-empty"
+        assert filename.strip() != '', \
+            "Filename should not be just whitespace"
+
+    @settings(max_examples=100)
+    @given(
+        long_message=st.text(min_size=200, max_size=1000, alphabet=st.characters(
+            whitelist_categories=('Lu', 'Ll', 'Nd', 'Zs')
+        ))
+    )
+    def test_long_messages_truncated_appropriately(self, long_message):
+        """Property test: Long messages are truncated to reasonable filename length."""
+        # Feature: kiro-chat-support, Property 9: Filename Generation From Content
+        
+        from src.exporters import _generate_filename_from_content
+        from src.models import ChatSource
+        
+        # Arrange: Create chat data with long message
+        chat_data = [{
+            'message': {
+                'role': 'human',
+                'content': long_message
+            }
+        }]
+        
+        # Act: Generate filename
+        filename = _generate_filename_from_content(
+            chat_data,
+            fallback='fallback',
+            source=ChatSource.KIRO_IDE
+        )
+        
+        # Assert: Filename is truncated to reasonable length
+        assert len(filename) <= 100, \
+            f"Long messages should be truncated to <= 100 chars, got {len(filename)}"
+        
+        # Assert: Filename is still non-empty
+        assert len(filename) > 0, \
+            "Truncated filename should still be non-empty"

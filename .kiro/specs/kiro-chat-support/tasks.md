@@ -155,22 +155,22 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
     - **Property 11: Special Block Formatting**
     - **Validates: Requirements 8.2, 8.3**
 
-- [ ] 11. Extend exporters for Kiro support
-  - [ ] 11.1 Update exporters.py for Kiro chats
+- [x] 11. Extend exporters for Kiro support
+  - [x] 11.1 Update exporters.py for Kiro chats
     - Ensure all export formats work with Kiro messages
     - Use session title or first message for filenames
     - _Requirements: 4.1, 4.3_
-  - [ ] 11.2 Add verbose mode metadata preservation
+  - [x] 11.2 Add verbose mode metadata preservation
     - Include execution IDs in verbose exports
     - Include context items in verbose exports
     - _Requirements: 4.4_
-  - [ ] 11.3 Implement batch export for Kiro workspaces
+  - [x] 11.3 Implement batch export for Kiro workspaces
     - Export all sessions in a workspace to output directory
     - _Requirements: 4.5_
-  - [ ] 11.4 Write property test for export format support
+  - [x] 11.4 Write property test for export format support
     - **Property 8: Export Format Support**
     - **Validates: Requirements 4.1**
-  - [ ] 11.5 Write property test for filename generation
+  - [x] 11.5 Write property test for filename generation
     - **Property 9: Filename Generation From Content**
     - **Validates: Requirements 4.3**
 
