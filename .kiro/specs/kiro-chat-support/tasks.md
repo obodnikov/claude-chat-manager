@@ -123,22 +123,22 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
     - Test --source all
     - _Requirements: 3.1, 3.3_
 
-- [ ] 8. Integrate Kiro with unified project listing
-  - [ ] 8.1 Update projects.py for multi-source support
+- [x] 8. Integrate Kiro with unified project listing
+  - [x] 8.1 Update projects.py for multi-source support
     - Modify `list_all_projects()` to accept source filter
     - Add Kiro project discovery when source includes kiro
     - _Requirements: 3.1, 3.2_
-  - [ ] 8.2 Implement source-aware project merging
+  - [x] 8.2 Implement source-aware project merging
     - Combine Claude and Kiro projects when source is 'all'
     - Apply consistent sorting across sources
     - _Requirements: 3.4_
-  - [ ] 8.3 Add source indicator to project display
+  - [x] 8.3 Add source indicator to project display
     - Show [Claude] or [Kiro] prefix in project listings
     - _Requirements: 3.2_
-  - [ ] 8.4 Write property test for source filtering
+  - [x] 8.4 Write property test for source filtering
     - **Property 6: Source Filtering Correctness**
     - **Validates: Requirements 3.3, 3.5**
-  - [ ] 8.5 Write property test for source indication
+  - [x] 8.5 Write property test for source indication
     - **Property 7: Project Source Indication**
     - **Validates: Requirements 3.2**
 

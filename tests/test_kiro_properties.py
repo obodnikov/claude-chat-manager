@@ -9,7 +9,8 @@ import json
 import pytest
 import tempfile
 from pathlib import Path
-from hypothesis import given, strategies as st, settings
+from unittest.mock import patch, MagicMock
+from hypothesis import given, strategies as st, settings, assume
 
 from src.kiro_parser import (
     parse_kiro_chat_file,
@@ -18,8 +19,11 @@ from src.kiro_parser import (
 )
 from src.kiro_projects import (
     decode_workspace_path,
-    list_kiro_sessions
+    list_kiro_sessions,
+    discover_kiro_workspaces
 )
+from src.models import ChatSource, ProjectInfo
+from src.projects import list_all_projects, search_projects_by_name, get_recent_projects
 
 
 # Hypothesis strategies for generating test data
@@ -593,3 +597,425 @@ class TestProperty5SessionDiscoveryCompleteness:
             # Assert: Count matches (including zero)
             assert len(sessions) == num_sessions, \
                 f"Should discover exactly {num_sessions} sessions"
+
+
+
+# Helper functions for test data generation
+
+def create_mock_claude_projects(num_projects: int, base_path: Path) -> list:
+    """Helper to create mock Claude project directories."""
+    projects = []
+    for i in range(num_projects):
+        project_dir = base_path / f"claude-project-{i}"
+        project_dir.mkdir(parents=True, exist_ok=True)
+        # Create a dummy JSONL file
+        jsonl_file = project_dir / f"chat-{i}.jsonl"
+        jsonl_file.write_text('{"role":"user","content":"test"}\n')
+        projects.append(project_dir)
+    return projects
+
+
+def create_mock_kiro_workspace(workspace_dir: Path, num_sessions: int, workspace_path: str = None) -> Path:
+    """Helper to create mock Kiro workspace with sessions.
+    
+    Args:
+        workspace_dir: The encoded directory path where sessions.json will be stored
+        num_sessions: Number of sessions to create
+        workspace_path: The actual workspace path (decoded) to store in workspaceDirectory field
+    """
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    
+    # If workspace_path not provided, use workspace_dir as fallback
+    if workspace_path is None:
+        workspace_path = str(workspace_dir)
+    
+    # Create sessions.json
+    sessions_data = []
+    for i in range(num_sessions):
+        sessions_data.append({
+            'sessionId': f'session-{i}',
+            'title': f'Session {i}',
+            'dateCreated': 1234567890000 + i,
+            'workspaceDirectory': workspace_path  # Use the actual workspace path
+        })
+    
+    sessions_file = workspace_dir / 'sessions.json'
+    with open(sessions_file, 'w', encoding='utf-8') as f:
+        json.dump(sessions_data, f)
+    
+    # Create session files
+    for i in range(num_sessions):
+        session_file = workspace_dir / f'session-{i}.json'
+        session_file.write_text('{"chat":[]}')
+    
+    return workspace_dir
+
+
+class TestProperty6SourceFilteringCorrectness:
+    """Property 6: Source Filtering Correctness.
+    
+    Feature: kiro-chat-support, Property 6: Source Filtering Correctness
+    Validates: Requirements 3.3, 3.5
+    
+    For any list of projects from mixed sources (Claude and Kiro), filtering by a
+    specific source SHALL return only projects where the source field matches the
+    filter, and the count SHALL be less than or equal to the original list size.
+    """
+
+    @settings(max_examples=100)
+    @given(
+        num_claude=st.integers(min_value=0, max_value=10),
+        num_kiro=st.integers(min_value=0, max_value=10)
+    )
+    def test_list_all_projects_filters_by_source(self, num_claude, num_kiro):
+        """Property test: list_all_projects correctly filters by source."""
+        # Feature: kiro-chat-support, Property 6: Source Filtering Correctness
+        
+        assume(num_claude > 0 or num_kiro > 0)  # Need at least one project
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            claude_dir = tmpdir_path / 'claude'
+            kiro_dir = tmpdir_path / 'kiro' / 'workspace-sessions'
+            
+            # Create mock Claude projects
+            if num_claude > 0:
+                claude_projects = create_mock_claude_projects(num_claude, claude_dir)
+            
+            # Create mock Kiro workspace
+            if num_kiro > 0:
+                # Encode workspace path
+                workspace_path = str(tmpdir_path / 'workspace')
+                encoded = base64.urlsafe_b64encode(workspace_path.encode('utf-8')).decode('utf-8').rstrip('=')
+                workspace_dir = kiro_dir / encoded
+                create_mock_kiro_workspace(workspace_dir, num_kiro, workspace_path)
+            
+            # Mock config to use our temp directories
+            with patch('src.projects.config') as mock_config:
+                mock_config.claude_projects_dir = claude_dir
+                mock_config.kiro_data_dir = kiro_dir.parent
+                mock_config.validate_kiro_directory.return_value = kiro_dir.parent.exists()
+                
+                # Test filtering by Claude only
+                if num_claude > 0:
+                    claude_projects = list_all_projects(ChatSource.CLAUDE_DESKTOP)
+                    assert all(p.source == ChatSource.CLAUDE_DESKTOP for p in claude_projects), \
+                        "Claude filter should return only Claude projects"
+                    assert len(claude_projects) == num_claude, \
+                        f"Should return {num_claude} Claude projects, got {len(claude_projects)}"
+                
+                # Test filtering by Kiro only
+                if num_kiro > 0:
+                    kiro_projects = list_all_projects(ChatSource.KIRO_IDE)
+                    assert all(p.source == ChatSource.KIRO_IDE for p in kiro_projects), \
+                        "Kiro filter should return only Kiro projects"
+                    # Note: Kiro returns workspaces, not individual sessions
+                    # We create exactly 1 workspace when num_kiro > 0
+                    assert len(kiro_projects) == 1, \
+                        f"Should return exactly 1 Kiro workspace, got {len(kiro_projects)}"
+                
+                # Test no filter (all sources)
+                all_projects = list_all_projects(None)
+                total_expected = num_claude + (1 if num_kiro > 0 else 0)  # 1 workspace
+                assert len(all_projects) == total_expected, \
+                    f"Should return {total_expected} total projects"
+
+    @settings(max_examples=100)
+    @given(
+        num_claude=st.integers(min_value=1, max_value=10),
+        num_kiro_sessions=st.integers(min_value=1, max_value=10)
+    )
+    def test_filtered_count_less_than_or_equal_original(self, num_claude, num_kiro_sessions):
+        """Property test: Filtered count is <= original count."""
+        # Feature: kiro-chat-support, Property 6: Source Filtering Correctness
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            claude_dir = tmpdir_path / 'claude'
+            kiro_dir = tmpdir_path / 'kiro' / 'workspace-sessions'
+            
+            # Create mock projects
+            create_mock_claude_projects(num_claude, claude_dir)
+            
+            workspace_path = str(tmpdir_path / 'workspace')
+            encoded = base64.urlsafe_b64encode(workspace_path.encode('utf-8')).decode('utf-8').rstrip('=')
+            workspace_dir = kiro_dir / encoded
+            create_mock_kiro_workspace(workspace_dir, num_kiro_sessions, workspace_path)
+            
+            with patch('src.projects.config') as mock_config:
+                mock_config.claude_projects_dir = claude_dir
+                mock_config.kiro_data_dir = kiro_dir.parent
+                mock_config.validate_kiro_directory.return_value = True
+                
+                # Get all projects
+                all_projects = list_all_projects(None)
+                original_count = len(all_projects)
+                
+                # Filter by each source
+                claude_filtered = list_all_projects(ChatSource.CLAUDE_DESKTOP)
+                kiro_filtered = list_all_projects(ChatSource.KIRO_IDE)
+                
+                # Assert filtered counts are <= original
+                assert len(claude_filtered) <= original_count, \
+                    f"Claude filtered ({len(claude_filtered)}) should be <= original ({original_count})"
+                assert len(kiro_filtered) <= original_count, \
+                    f"Kiro filtered ({len(kiro_filtered)}) should be <= original ({original_count})"
+                
+                # Assert exact counts for accuracy
+                assert len(claude_filtered) == num_claude, \
+                    f"Should return exactly {num_claude} Claude projects"
+                assert len(kiro_filtered) == 1, \
+                    f"Should return exactly 1 Kiro workspace (not {len(kiro_filtered)})"
+
+    @settings(max_examples=100)
+    @given(
+        num_claude=st.integers(min_value=1, max_value=8),
+        num_kiro_sessions=st.integers(min_value=1, max_value=8)
+    )
+    def test_no_cross_contamination_in_search(self, num_claude, num_kiro_sessions):
+        """Property test: search_projects_by_name respects source filter."""
+        # Feature: kiro-chat-support, Property 6: Source Filtering Correctness
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            claude_dir = tmpdir_path / 'claude'
+            kiro_dir = tmpdir_path / 'kiro' / 'workspace-sessions'
+            
+            # Create projects with distinctive names
+            create_mock_claude_projects(num_claude, claude_dir)
+            
+            # Create Kiro workspace with 'workspace' in the path name
+            # The workspace_name will be the last component of the decoded path
+            workspace_path = str(tmpdir_path / 'my-kiro-workspace')
+            encoded = base64.urlsafe_b64encode(workspace_path.encode('utf-8')).decode('utf-8').rstrip('=')
+            workspace_dir = kiro_dir / encoded
+            create_mock_kiro_workspace(workspace_dir, num_kiro_sessions, workspace_path)
+            
+            with patch('src.projects.config') as mock_config:
+                mock_config.claude_projects_dir = claude_dir
+                mock_config.kiro_data_dir = kiro_dir.parent
+                mock_config.validate_kiro_directory.return_value = True
+                
+                # Search with Claude filter - should only return Claude projects
+                claude_results = search_projects_by_name('project', ChatSource.CLAUDE_DESKTOP)
+                assert all(p.source == ChatSource.CLAUDE_DESKTOP for p in claude_results), \
+                    "Claude search should never return Kiro projects"
+                
+                # Search with Kiro filter - should only return Kiro projects
+                # The workspace name will be 'my-kiro-workspace' (last component of path)
+                kiro_results = search_projects_by_name('workspace', ChatSource.KIRO_IDE)
+                assert all(p.source == ChatSource.KIRO_IDE for p in kiro_results), \
+                    "Kiro search should never return Claude projects"
+                # Verify we actually found the workspace
+                assert len(kiro_results) == 1, \
+                    f"Should find exactly 1 Kiro workspace matching 'workspace', found {len(kiro_results)}"
+
+    @settings(max_examples=100)
+    @given(num_projects=st.integers(min_value=1, max_value=15))
+    def test_filter_with_single_source_type(self, num_projects):
+        """Property test: Filtering single-source projects works correctly."""
+        # Feature: kiro-chat-support, Property 6: Source Filtering Correctness
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            claude_dir = tmpdir_path / 'claude'
+            kiro_dir = tmpdir_path / 'kiro' / 'workspace-sessions'
+            
+            # Create only Claude projects
+            create_mock_claude_projects(num_projects, claude_dir)
+            
+            with patch('src.projects.config') as mock_config:
+                mock_config.claude_projects_dir = claude_dir
+                mock_config.kiro_data_dir = kiro_dir
+                mock_config.validate_kiro_directory.return_value = False  # No Kiro
+                
+                # Filter by Claude (should return all)
+                claude_filtered = list_all_projects(ChatSource.CLAUDE_DESKTOP)
+                assert len(claude_filtered) == num_projects, \
+                    "Filtering by matching source should return all projects"
+                
+                # Filter by Kiro (should raise exception since no projects found)
+                with pytest.raises(Exception):  # ProjectNotFoundError
+                    kiro_filtered = list_all_projects(ChatSource.KIRO_IDE)
+
+
+class TestProperty7ProjectSourceIndication:
+    """Property 7: Project Source Indication.
+    
+    Feature: kiro-chat-support, Property 7: Project Source Indication
+    Validates: Requirements 3.2
+    
+    For any project returned by the unified project listing, the source field SHALL
+    be either ChatSource.CLAUDE_DESKTOP or ChatSource.KIRO_IDE (never UNKNOWN for
+    discovered projects).
+    """
+
+    @settings(max_examples=100)
+    @given(
+        num_claude=st.integers(min_value=0, max_value=10),
+        num_kiro_sessions=st.integers(min_value=0, max_value=10)
+    )
+    def test_discovered_projects_have_valid_source(self, num_claude, num_kiro_sessions):
+        """Property test: All discovered projects have valid source field."""
+        # Feature: kiro-chat-support, Property 7: Project Source Indication
+        
+        assume(num_claude > 0 or num_kiro_sessions > 0)
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            claude_dir = tmpdir_path / 'claude'
+            kiro_dir = tmpdir_path / 'kiro' / 'workspace-sessions'
+            
+            if num_claude > 0:
+                create_mock_claude_projects(num_claude, claude_dir)
+            
+            if num_kiro_sessions > 0:
+                workspace_path = str(tmpdir_path / 'workspace')
+                encoded = base64.urlsafe_b64encode(workspace_path.encode('utf-8')).decode('utf-8').rstrip('=')
+                workspace_dir = kiro_dir / encoded
+                create_mock_kiro_workspace(workspace_dir, num_kiro_sessions, workspace_path)
+            
+            with patch('src.projects.config') as mock_config:
+                mock_config.claude_projects_dir = claude_dir
+                mock_config.kiro_data_dir = kiro_dir.parent
+                mock_config.validate_kiro_directory.return_value = kiro_dir.parent.exists()
+                
+                # Get all projects
+                projects = list_all_projects(None)
+                
+                # Assert: All projects have valid source (not UNKNOWN)
+                for project in projects:
+                    assert project.source != ChatSource.UNKNOWN, \
+                        f"Project '{project.name}' should not have UNKNOWN source"
+                    assert project.source in [ChatSource.CLAUDE_DESKTOP, ChatSource.KIRO_IDE], \
+                        f"Project '{project.name}' should have Claude or Kiro source, got {project.source}"
+
+    @settings(max_examples=100)
+    @given(num_sessions=st.integers(min_value=1, max_value=15))
+    def test_kiro_sessions_have_kiro_source(self, num_sessions):
+        """Property test: Kiro workspaces always have KIRO_IDE source."""
+        # Feature: kiro-chat-support, Property 7: Project Source Indication
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            kiro_dir = tmpdir_path / 'kiro' / 'workspace-sessions'
+            
+            workspace_path = str(tmpdir_path / 'test-workspace')
+            encoded = base64.urlsafe_b64encode(workspace_path.encode('utf-8')).decode('utf-8').rstrip('=')
+            workspace_dir = kiro_dir / encoded
+            create_mock_kiro_workspace(workspace_dir, num_sessions, workspace_path)
+            
+            with patch('src.projects.config') as mock_config:
+                mock_config.claude_projects_dir = Path('/nonexistent')
+                mock_config.kiro_data_dir = kiro_dir.parent
+                mock_config.validate_kiro_directory.return_value = True
+                
+                # Get Kiro projects
+                projects = list_all_projects(ChatSource.KIRO_IDE)
+                
+                # Assert: All are Kiro source
+                assert len(projects) > 0, "Should discover at least one workspace"
+                for project in projects:
+                    assert project.source == ChatSource.KIRO_IDE, \
+                        f"Kiro project '{project.name}' must have KIRO_IDE source"
+
+    @settings(max_examples=100)
+    @given(num_projects=st.integers(min_value=1, max_value=12))
+    def test_claude_projects_have_claude_source(self, num_projects):
+        """Property test: Claude projects always have CLAUDE_DESKTOP source."""
+        # Feature: kiro-chat-support, Property 7: Project Source Indication
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            claude_dir = tmpdir_path / 'claude'
+            
+            create_mock_claude_projects(num_projects, claude_dir)
+            
+            with patch('src.projects.config') as mock_config:
+                mock_config.claude_projects_dir = claude_dir
+                mock_config.kiro_data_dir = Path('/nonexistent')
+                mock_config.validate_kiro_directory.return_value = False
+                
+                # Get Claude projects
+                projects = list_all_projects(ChatSource.CLAUDE_DESKTOP)
+                
+                # Assert: All are Claude source
+                assert len(projects) == num_projects, \
+                    f"Should discover {num_projects} Claude projects"
+                for project in projects:
+                    assert project.source == ChatSource.CLAUDE_DESKTOP, \
+                        f"Claude project '{project.name}' must have CLAUDE_DESKTOP source"
+
+    @settings(max_examples=100)
+    @given(
+        num_claude=st.integers(min_value=1, max_value=8),
+        num_kiro_sessions=st.integers(min_value=1, max_value=8)
+    )
+    def test_mixed_sources_all_valid(self, num_claude, num_kiro_sessions):
+        """Property test: Mixed source projects all have valid sources."""
+        # Feature: kiro-chat-support, Property 7: Project Source Indication
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            claude_dir = tmpdir_path / 'claude'
+            kiro_dir = tmpdir_path / 'kiro' / 'workspace-sessions'
+            
+            create_mock_claude_projects(num_claude, claude_dir)
+            
+            workspace_path = str(tmpdir_path / 'workspace')
+            encoded = base64.urlsafe_b64encode(workspace_path.encode('utf-8')).decode('utf-8').rstrip('=')
+            workspace_dir = kiro_dir / encoded
+            create_mock_kiro_workspace(workspace_dir, num_kiro_sessions, workspace_path)
+            
+            with patch('src.projects.config') as mock_config:
+                mock_config.claude_projects_dir = claude_dir
+                mock_config.kiro_data_dir = kiro_dir.parent
+                mock_config.validate_kiro_directory.return_value = True
+                
+                # Get all projects
+                projects = list_all_projects(None)
+                
+                # Assert: All have valid sources
+                valid_sources = {ChatSource.CLAUDE_DESKTOP, ChatSource.KIRO_IDE}
+                for project in projects:
+                    assert project.source in valid_sources, \
+                        f"Project '{project.name}' has invalid source: {project.source}"
+                    assert project.source != ChatSource.UNKNOWN, \
+                        f"Project '{project.name}' must not have UNKNOWN source"
+
+    @settings(max_examples=100)
+    @given(
+        num_claude=st.integers(min_value=1, max_value=10),
+        num_kiro_sessions=st.integers(min_value=1, max_value=10)
+    )
+    def test_recent_projects_have_valid_sources(self, num_claude, num_kiro_sessions):
+        """Property test: get_recent_projects returns projects with valid sources."""
+        # Feature: kiro-chat-support, Property 7: Project Source Indication
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            claude_dir = tmpdir_path / 'claude'
+            kiro_dir = tmpdir_path / 'kiro' / 'workspace-sessions'
+            
+            create_mock_claude_projects(num_claude, claude_dir)
+            
+            workspace_path = str(tmpdir_path / 'workspace')
+            encoded = base64.urlsafe_b64encode(workspace_path.encode('utf-8')).decode('utf-8').rstrip('=')
+            workspace_dir = kiro_dir / encoded
+            create_mock_kiro_workspace(workspace_dir, num_kiro_sessions, workspace_path)
+            
+            with patch('src.projects.config') as mock_config:
+                mock_config.claude_projects_dir = claude_dir
+                mock_config.kiro_data_dir = kiro_dir.parent
+                mock_config.validate_kiro_directory.return_value = True
+                
+                # Get recent projects
+                recent = get_recent_projects(count=20, source_filter=None)
+                
+                # Assert: All have valid sources
+                for project in recent:
+                    assert project.source in [ChatSource.CLAUDE_DESKTOP, ChatSource.KIRO_IDE], \
+                        f"Recent project must have valid source"
+                    assert project.source != ChatSource.UNKNOWN, \
+                        f"Recent project must not have UNKNOWN source"
+
