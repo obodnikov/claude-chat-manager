@@ -174,12 +174,12 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
     - **Property 9: Filename Generation From Content**
     - **Validates: Requirements 4.3**
 
-- [ ] 12. Update interactive browser for Kiro
-  - [ ] 12.1 Update cli.py for source filtering
+- [x] 12. Update interactive browser for Kiro
+  - [x] 12.1 Update cli.py for source filtering
     - Add source filter to interactive browser
     - Show source indicator in project list
     - _Requirements: 6.1, 6.2_
-  - [ ] 12.2 Update search to include Kiro chats
+  - [x] 12.2 Update search to include Kiro chats
     - Search across both sources when enabled
     - _Requirements: 6.4_
 

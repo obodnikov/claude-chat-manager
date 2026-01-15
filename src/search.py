@@ -109,12 +109,60 @@ def search_chat_content(search_term: str, source_filter: Optional[ChatSource] = 
         else:
             logger.warning(f"Claude projects directory not found: {claude_dir}")
     
-    # Search Kiro IDE projects (placeholder for future implementation)
+    # Search Kiro IDE projects
     if search_kiro:
         if config.validate_kiro_directory():
-            # TODO: Implement Kiro content search in Task 12.2
-            # Will require parsing Kiro .chat files and searching message content
-            logger.debug("Kiro content search not yet implemented (deferred to Task 12.2)")
+            try:
+                from .kiro_projects import discover_kiro_workspaces
+                from .kiro_parser import parse_kiro_chat_file, normalize_kiro_content
+                
+                kiro_workspaces = discover_kiro_workspaces(config.kiro_data_dir)
+                
+                for workspace in kiro_workspaces:
+                    workspace_name = workspace.workspace_name
+                    
+                    for session in workspace.sessions:
+                        chat_file = session.chat_file_path
+                        
+                        if not chat_file.exists():
+                            continue
+                        
+                        try:
+                            # Parse the Kiro chat file
+                            kiro_session = parse_kiro_chat_file(chat_file)
+                            
+                            # Search through messages
+                            for msg_num, message in enumerate(kiro_session.messages, 1):
+                                role = message.get('role', 'unknown')
+                                content = message.get('content', '')
+                                
+                                # Normalize content to string
+                                normalized_content = normalize_kiro_content(content)
+                                
+                                # Check if search term is in content
+                                if search_term.lower() not in normalized_content.lower():
+                                    continue
+                                
+                                # Extract preview
+                                preview = _extract_preview(normalized_content, search_term)
+                                if preview:
+                                    result = SearchResult(
+                                        project_name=workspace_name,
+                                        chat_name=session.title or session.session_id,
+                                        line_number=msg_num,
+                                        role=role,
+                                        preview=preview
+                                    )
+                                    results.append(result)
+                                    break  # Only first match per session
+                        
+                        except Exception as e:
+                            logger.debug(f"Error searching Kiro chat {chat_file}: {e}")
+                            continue
+                
+                logger.info(f"Searched {len(kiro_workspaces)} Kiro workspaces")
+            except Exception as e:
+                logger.warning(f"Error searching Kiro projects: {e}")
         else:
             logger.debug("Kiro data directory not found, skipping Kiro search")
 

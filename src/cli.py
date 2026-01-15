@@ -383,90 +383,134 @@ def interactive_browser(source_filter: Optional[ChatSource] = None) -> None:
     Args:
         source_filter: Filter by source (None = all sources).
     """
-    try:
-        projects = list_all_projects(source_filter)
-    except ProjectNotFoundError as e:
-        print_colored(f"❌ {e.message}", Colors.RED)
-        print("Make sure you have Claude Desktop installed and have created projects.")
-        return
-
-    if not projects:
-        print_colored(f"No projects with chat files found", Colors.YELLOW)
-        return
-
-    # Sort by last modified (most recent first)
-    projects.sort(key=lambda x: x.last_modified, reverse=True)
-
-    print_colored("🤖 Claude JSONL Chat Browser", Colors.BLUE)
-    print("=" * 60)
-    print()
-    print_colored("Available projects:", Colors.CYAN)
-    print()
-
-    for i, info in enumerate(projects, 1):
-        source_label = "[Claude]" if info.source == ChatSource.CLAUDE_DESKTOP else "[Kiro]  "
-        name_col = f"{i:2d}) {source_label} {info.name}"
-        details_col = f"({info.file_count} chats, {info.total_messages} msgs, {info.last_modified})"
-
-        if len(name_col) < 48:
-            padding = 48 - len(name_col)
-            print(f"{name_col}{' ' * padding}{details_col}")
-        else:
-            print(f"{name_col}")
-            print(f"{'':>50}{details_col}")
-
-    print()
-    print_colored("Options:", Colors.YELLOW)
-    print(f"  1-{len(projects)}) Browse specific project")
-    print("  l) List all projects with details")
-    print("  r) Show recent projects")
-    print("  c) Search chat content")
-    print("  q) Quit")
-    print()
-
+    # Main loop to avoid recursion when switching sources or returning from submenus
     while True:
         try:
-            choice = input("Enter choice: ").strip()
+            projects = list_all_projects(source_filter)
+        except ProjectNotFoundError as e:
+            print_colored(f"❌ {e.message}", Colors.RED)
+            print("Make sure you have Claude Desktop installed and have created projects.")
+            return
 
-            if choice.lower() in ['q', 'quit']:
-                print_colored("👋 Goodbye!", Colors.BLUE)
-                break
-            elif choice.lower() == 'l':
-                print()
-                display_projects_list(source_filter)
-                print()
-                input("Press Enter to continue...")
-                return interactive_browser(source_filter)
-            elif choice.lower() == 'r':
-                print()
-                display_recent_projects(10, source_filter)
-                print()
-                input("Press Enter to continue...")
-                return interactive_browser(source_filter)
-            elif choice.lower() == 'c':
-                search_term = input("Enter search term: ").strip()
-                if search_term:
+        if not projects:
+            print_colored(f"No projects with chat files found", Colors.YELLOW)
+            return
+
+        # Sort by last modified (most recent first)
+        projects.sort(key=lambda x: x.last_modified, reverse=True)
+
+        # Determine title based on current filter
+        if source_filter == ChatSource.CLAUDE_DESKTOP:
+            title = "🤖 Claude Desktop Chat Browser"
+        elif source_filter == ChatSource.KIRO_IDE:
+            title = "🤖 Kiro IDE Chat Browser"
+        else:
+            title = "🤖 Chat Browser (All Sources)"
+        
+        print_colored(title, Colors.BLUE)
+        print("=" * 60)
+        print()
+        print_colored("Available projects:", Colors.CYAN)
+        print()
+
+        for i, info in enumerate(projects, 1):
+            source_label = "[Claude]" if info.source == ChatSource.CLAUDE_DESKTOP else "[Kiro]  "
+            name_col = f"{i:2d}) {source_label} {info.name}"
+            details_col = f"({info.file_count} chats, {info.total_messages} msgs, {info.last_modified})"
+
+            if len(name_col) < 48:
+                padding = 48 - len(name_col)
+                print(f"{name_col}{' ' * padding}{details_col}")
+            else:
+                print(f"{name_col}")
+                print(f"{'':>50}{details_col}")
+
+        print()
+        print_colored("Options:", Colors.YELLOW)
+        print(f"  1-{len(projects)}) Browse specific project")
+        print("  l) List all projects with details")
+        print("  r) Show recent projects")
+        print("  c) Search chat content")
+        print("  s) Switch source filter")
+        print("  q) Quit")
+        print()
+
+        # Inner loop for handling menu choices
+        menu_active = True
+        while menu_active:
+            try:
+                choice = input("Enter choice: ").strip()
+
+                if choice.lower() in ['q', 'quit']:
+                    print_colored("👋 Goodbye!", Colors.BLUE)
+                    return
+                elif choice.lower() == 's':
+                    # Switch source filter
                     print()
-                    display_content_search(search_term, source_filter)
+                    print_colored("Select source:", Colors.YELLOW)
+                    print("  1) Claude Desktop only")
+                    print("  2) Kiro IDE only")
+                    print("  3) All sources")
+                    print()
+                    source_choice = input("Enter choice (1-3): ").strip()
+                    
+                    if source_choice == '1':
+                        source_filter = ChatSource.CLAUDE_DESKTOP
+                        print_colored("Switched to Claude Desktop only", Colors.GREEN)
+                    elif source_choice == '2':
+                        source_filter = ChatSource.KIRO_IDE
+                        print_colored("Switched to Kiro IDE only", Colors.GREEN)
+                    elif source_choice == '3':
+                        source_filter = None
+                        print_colored("Switched to all sources", Colors.GREEN)
+                    else:
+                        print_colored("Invalid choice, keeping current filter", Colors.RED)
+                    
                     print()
                     input("Press Enter to continue...")
-                return interactive_browser(source_filter)
-            elif choice.isdigit():
-                choice_num = int(choice)
-                if 1 <= choice_num <= len(projects):
+                    # Break inner loop to refresh project list with new filter
+                    menu_active = False
+                elif choice.lower() == 'l':
                     print()
-                    should_continue = browse_project_interactive(projects[choice_num - 1].path)
-                    if should_continue:
+                    display_projects_list(source_filter)
+                    print()
+                    input("Press Enter to continue...")
+                    # Break inner loop to redisplay menu
+                    menu_active = False
+                elif choice.lower() == 'r':
+                    print()
+                    display_recent_projects(10, source_filter)
+                    print()
+                    input("Press Enter to continue...")
+                    # Break inner loop to redisplay menu
+                    menu_active = False
+                elif choice.lower() == 'c':
+                    search_term = input("Enter search term: ").strip()
+                    if search_term:
                         print()
-                        return interactive_browser(source_filter)
+                        display_content_search(search_term, source_filter)
+                        print()
+                        input("Press Enter to continue...")
+                    # Break inner loop to redisplay menu
+                    menu_active = False
+                elif choice.isdigit():
+                    choice_num = int(choice)
+                    if 1 <= choice_num <= len(projects):
+                        print()
+                        should_continue = browse_project_interactive(projects[choice_num - 1].path)
+                        if should_continue:
+                            print()
+                            # Break inner loop to redisplay menu
+                            menu_active = False
+                        else:
+                            # User quit from project browser
+                            return
                     else:
-                        break
+                        print_colored(f"Invalid selection. Please choose 1-{len(projects)}", Colors.RED)
                 else:
-                    print_colored(f"Invalid selection. Please choose 1-{len(projects)}", Colors.RED)
-            else:
-                print_colored("Invalid choice. Please enter a number, 'l', 'r', 'c', or 'q'", Colors.RED)
+                    print_colored("Invalid choice. Please enter a number, 'l', 'r', 'c', 's', or 'q'", Colors.RED)
 
-        except (KeyboardInterrupt, EOFError):
-            print()
-            print_colored("👋 Goodbye!", Colors.BLUE)
-            break
+            except (KeyboardInterrupt, EOFError):
+                print()
+                print_colored("👋 Goodbye!", Colors.BLUE)
+                return
