@@ -5,9 +5,11 @@ environment variables and config files.
 """
 
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 import logging
+from src.models import ChatSource
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +72,7 @@ class Config:
     def __init__(self) -> None:
         """Initialize configuration with default values."""
         self._claude_dir: Optional[Path] = None
+        self._kiro_dir: Optional[Path] = None
         self._load_config()
 
     def _load_config(self) -> None:
@@ -85,6 +88,54 @@ class Config:
             self._claude_dir = home / '.claude' / 'projects'
             logger.debug(f"Using default Claude directory: {self._claude_dir}")
 
+        # Kiro data directory
+        kiro_dir_env = os.getenv('KIRO_DATA_DIR')
+        if kiro_dir_env:
+            self._kiro_dir = Path(kiro_dir_env)
+            logger.info(f"Using KIRO_DATA_DIR from environment: {self._kiro_dir}")
+        else:
+            # Default location based on OS
+            self._kiro_dir = self._get_default_kiro_dir()
+            logger.debug(f"Using default Kiro directory: {self._kiro_dir}")
+
+    def _get_default_kiro_dir(self) -> Path:
+        """Get OS-specific default Kiro data directory.
+        
+        Returns:
+            Path to default Kiro data directory based on operating system.
+            
+        Raises:
+            ValueError: If APPDATA environment variable is not set on Windows.
+        """
+        if sys.platform == 'win32':
+            # Windows: %APPDATA%\Kiro\User\globalStorage\kiro.kiroagent\
+            appdata = os.environ.get('APPDATA')
+            if not appdata:
+                raise ValueError('APPDATA environment variable not set on Windows')
+            base = Path(appdata)
+            return base / 'Kiro' / 'User' / 'globalStorage' / 'kiro.kiroagent'
+        elif sys.platform == 'darwin':
+            # macOS: ~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/
+            return Path.home() / 'Library' / 'Application Support' / 'Kiro' / 'User' / 'globalStorage' / 'kiro.kiroagent'
+        else:
+            # Linux: ~/.config/Kiro/User/globalStorage/kiro.kiroagent/
+            return Path.home() / '.config' / 'Kiro' / 'User' / 'globalStorage' / 'kiro.kiroagent'
+
+    def validate_kiro_directory(self) -> bool:
+        """Validate that the Kiro data directory exists.
+        
+        Returns:
+            True if directory exists, False otherwise.
+            Logs a warning if directory is not found.
+        """
+        if not self._kiro_dir.exists():
+            logger.warning(f"Kiro data directory not found: {self._kiro_dir}")
+            return False
+        if not self._kiro_dir.is_dir():
+            logger.warning(f"Kiro data path exists but is not a directory: {self._kiro_dir}")
+            return False
+        return True
+
     @property
     def claude_projects_dir(self) -> Path:
         """Get the Claude projects directory path.
@@ -93,6 +144,36 @@ class Config:
             Path to Claude projects directory.
         """
         return self._claude_dir
+
+    @property
+    def kiro_data_dir(self) -> Path:
+        """Get the Kiro data directory path.
+
+        Returns:
+            Path to Kiro data directory.
+        """
+        return self._kiro_dir
+
+    @property
+    def chat_source_filter(self) -> Optional[ChatSource]:
+        """Get configured chat source filter.
+        
+        Returns:
+            ChatSource enum value or None for all sources.
+            - ChatSource.CLAUDE_DESKTOP: Show only Claude Desktop chats
+            - ChatSource.KIRO_IDE: Show only Kiro IDE chats
+            - None: Show all sources
+        """
+        source = os.getenv('CHAT_SOURCE', 'claude').lower()
+        if source == 'claude':
+            return ChatSource.CLAUDE_DESKTOP
+        elif source == 'kiro':
+            return ChatSource.KIRO_IDE
+        elif source == 'all':
+            return None  # None means show all sources
+        else:
+            logger.warning(f"Invalid CHAT_SOURCE: {source}, defaulting to 'claude'")
+            return ChatSource.CLAUDE_DESKTOP
 
     @property
     def default_export_format(self) -> str:

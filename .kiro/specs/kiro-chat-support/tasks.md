@@ -24,85 +24,85 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
     - Test ProjectInfo with Kiro-specific fields
     - _Requirements: 7.1, 7.2_
 
-- [ ] 2. Implement Kiro parser module
-  - [ ] 2.1 Create src/kiro_parser.py with basic structure
+- [x] 2. Implement Kiro parser module
+  - [x] 2.1 Create src/kiro_parser.py with basic structure
     - Create KiroChatSession dataclass
     - Implement `parse_kiro_chat_file()` function
     - _Requirements: 1.1, 1.2_
-  - [ ] 2.2 Implement message extraction
+  - [x] 2.2 Implement message extraction
     - Implement `extract_kiro_messages()` function
     - Handle both string and array content formats
     - _Requirements: 1.2, 1.3_
-  - [ ] 2.3 Implement content normalization
+  - [x] 2.3 Implement content normalization
     - Implement `normalize_kiro_content()` function
     - Handle text blocks, tool use blocks, image references
     - _Requirements: 8.1, 8.2, 8.3, 8.4_
-  - [ ] 2.4 Implement error handling
+  - [x] 2.4 Implement error handling
     - Raise ChatFileNotFoundError for missing files
     - Raise InvalidChatFileError for invalid JSON
     - _Requirements: 1.4, 1.5_
-  - [ ] 2.5 Write unit tests for kiro_parser
+  - [x] 2.5 Write unit tests for kiro_parser
     - Test parsing valid .chat files
     - Test structured content handling
     - Test error cases
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
-  - [ ] 2.6 Write property test for message count preservation
+  - [x] 2.6 Write property test for message count preservation
     - **Property 1: Kiro Chat Parsing Preserves Message Structure**
     - **Validates: Requirements 1.1, 1.2**
-  - [ ] 2.7 Write property test for content normalization
+  - [x] 2.7 Write property test for content normalization
     - **Property 10: Content Normalization Transparency**
     - **Validates: Requirements 8.1, 8.4**
 
-- [ ] 3. Checkpoint - Ensure parser tests pass
+- [x] 3. Checkpoint - Ensure parser tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Implement Kiro projects discovery
-  - [ ] 4.1 Create src/kiro_projects.py with basic structure
+- [x] 4. Implement Kiro projects discovery
+  - [x] 4.1 Create src/kiro_projects.py with basic structure
     - Create KiroWorkspace and KiroSession dataclasses
     - Implement `discover_kiro_workspaces()` function
     - _Requirements: 2.1_
-  - [ ] 4.2 Implement base64 path decoding
+  - [x] 4.2 Implement base64 path decoding
     - Implement `decode_workspace_path()` function
     - Handle URL-safe base64 encoding
     - _Requirements: 2.2_
-  - [ ] 4.3 Implement sessions.json parsing
+  - [x] 4.3 Implement sessions.json parsing
     - Implement `list_kiro_sessions()` function
     - Parse session metadata (id, title, dateCreated, workspaceDirectory)
     - _Requirements: 2.4, 2.5_
-  - [ ] 4.4 Implement workspace metadata extraction
+  - [x] 4.4 Implement workspace metadata extraction
     - Calculate session count, last modified date
     - Extract human-readable workspace name
     - _Requirements: 2.3_
-  - [ ] 4.5 Write unit tests for kiro_projects
+  - [x] 4.5 Write unit tests for kiro_projects
     - Test workspace discovery
     - Test base64 decoding
     - Test sessions.json parsing
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
-  - [ ] 4.6 Write property test for base64 round-trip
+  - [x] 4.6 Write property test for base64 round-trip
     - **Property 4: Base64 Workspace Path Round-Trip**
     - **Validates: Requirements 2.2**
-  - [ ] 4.7 Write property test for session discovery completeness
+  - [x] 4.7 Write property test for session discovery completeness
     - **Property 5: Session Discovery Completeness**
     - **Validates: Requirements 2.4, 2.5**
 
-- [ ] 5. Checkpoint - Ensure discovery tests pass
+- [x] 5. Checkpoint - Ensure discovery tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. Extend configuration for Kiro support
-  - [ ] 6.1 Add Kiro configuration properties to config.py
+- [x] 6. Extend configuration for Kiro support
+  - [x] 6.1 Add Kiro configuration properties to config.py
     - Add `kiro_data_dir` property with OS-specific defaults
     - Add `chat_source_filter` property
     - Implement `_get_default_kiro_dir()` method
     - _Requirements: 5.1, 5.2, 5.3_
-  - [ ] 6.2 Add directory validation
+  - [x] 6.2 Add directory validation
     - Validate Kiro directory exists before scanning
     - Log warning if directory not found
     - _Requirements: 5.5_
-  - [ ] 6.3 Update .env.example with Kiro settings
+  - [x] 6.3 Update .env.example with Kiro settings
     - Add KIRO_DATA_DIR example
     - Add CHAT_SOURCE example
     - _Requirements: 5.1, 5.3_
-  - [ ] 6.4 Write unit tests for Kiro configuration
+  - [x] 6.4 Write unit tests for Kiro configuration
     - Test OS-specific default paths
     - Test environment variable overrides
     - Test source filter parsing
