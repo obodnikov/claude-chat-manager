@@ -10,18 +10,19 @@ import logging
 
 from .config import config
 from .exceptions import ProjectNotFoundError
-from .models import ProjectInfo
+from .models import ProjectInfo, ChatSource
 from .formatters import clean_project_name
 from .parser import count_messages_in_file
 
 logger = logging.getLogger(__name__)
 
 
-def get_project_info(project_dir: Path) -> ProjectInfo:
+def get_project_info(project_dir: Path, source: ChatSource = ChatSource.CLAUDE_DESKTOP) -> ProjectInfo:
     """Get information about a Claude project.
 
     Args:
         project_dir: Path to the project directory.
+        source: Source of the project (default: Claude Desktop).
 
     Returns:
         ProjectInfo object with project details.
@@ -54,102 +55,164 @@ def get_project_info(project_dir: Path) -> ProjectInfo:
         file_count=file_count,
         total_messages=total_messages,
         last_modified=last_modified or 'unknown',
-        sort_timestamp=sort_timestamp
+        sort_timestamp=sort_timestamp,
+        source=source
     )
 
 
-def list_all_projects() -> List[ProjectInfo]:
-    """List all available Claude projects.
+def list_all_projects(source_filter: Optional[ChatSource] = None) -> List[ProjectInfo]:
+    """List all available projects from specified sources.
+
+    Args:
+        source_filter: Filter by source (None = all sources, ChatSource.CLAUDE_DESKTOP, ChatSource.KIRO_IDE).
 
     Returns:
         List of ProjectInfo objects.
 
     Raises:
-        ProjectNotFoundError: If Claude projects directory doesn't exist.
+        ProjectNotFoundError: If no valid source directories exist.
     """
-    claude_dir = config.claude_projects_dir
-
-    if not claude_dir.exists():
-        raise ProjectNotFoundError(f"Claude projects directory not found: {claude_dir}")
-
     projects = []
-    for project_dir in claude_dir.iterdir():
-        if project_dir.is_dir():
-            info = get_project_info(project_dir)
-            if info.file_count > 0:  # Only include projects with JSONL files
-                projects.append(info)
-
-    logger.info(f"Found {len(projects)} projects with chat files")
+    
+    # Determine which sources to scan
+    scan_claude = source_filter is None or source_filter == ChatSource.CLAUDE_DESKTOP
+    scan_kiro = source_filter is None or source_filter == ChatSource.KIRO_IDE
+    
+    # Scan Claude Desktop projects
+    if scan_claude:
+        claude_dir = config.claude_projects_dir
+        if claude_dir.exists():
+            for project_dir in claude_dir.iterdir():
+                if project_dir.is_dir():
+                    info = get_project_info(project_dir, source=ChatSource.CLAUDE_DESKTOP)
+                    if info.file_count > 0:  # Only include projects with JSONL files
+                        projects.append(info)
+            logger.info(f"Found {len([p for p in projects if p.source == ChatSource.CLAUDE_DESKTOP])} Claude Desktop projects")
+        else:
+            logger.warning(f"Claude projects directory not found: {claude_dir}")
+    
+    # Scan Kiro IDE projects
+    if scan_kiro:
+        if config.validate_kiro_directory():
+            try:
+                from .kiro_projects import discover_kiro_workspaces
+                kiro_workspaces = discover_kiro_workspaces(config.kiro_data_dir)
+                
+                # Convert Kiro workspaces to ProjectInfo objects
+                for workspace in kiro_workspaces:
+                    # TODO: Calculate total_messages by parsing session files for accurate counts
+                    # Currently set to 0 to avoid expensive I/O operations during listing
+                    projects.append(ProjectInfo(
+                        name=workspace.workspace_name,
+                        path=Path(workspace.workspace_path),
+                        file_count=workspace.session_count,
+                        total_messages=0,  # Deferred: requires parsing all session files
+                        last_modified=workspace.last_modified,
+                        sort_timestamp=None,  # Could be parsed from last_modified if needed
+                        source=ChatSource.KIRO_IDE,
+                        workspace_path=workspace.workspace_path,
+                        session_ids=[s.session_id for s in workspace.sessions]
+                    ))
+                logger.info(f"Found {len([p for p in projects if p.source == ChatSource.KIRO_IDE])} Kiro IDE workspaces")
+            except Exception as e:
+                logger.warning(f"Error discovering Kiro projects: {e}")
+        else:
+            logger.debug("Kiro data directory not found, skipping Kiro projects")
+    
+    if not projects:
+        raise ProjectNotFoundError("No projects found in any configured source")
+    
+    logger.info(f"Found {len(projects)} total projects")
     return projects
 
 
-def find_project_by_name(project_name: str) -> Optional[Path]:
+def find_project_by_name(project_name: str, source_filter: Optional[ChatSource] = None) -> Optional[Path]:
     """Find a project by name (supports both clean and original names).
 
     Args:
         project_name: The project name to search for.
+        source_filter: Filter by source (None = all sources, ChatSource.CLAUDE_DESKTOP, ChatSource.KIRO_IDE).
 
     Returns:
         Path to the project directory if found, None otherwise.
     """
-    claude_dir = config.claude_projects_dir
-
-    if not claude_dir.exists():
-        return None
-
-    # Search through all project directories
-    for project_dir in claude_dir.iterdir():
-        if project_dir.is_dir():
-            clean_name = clean_project_name(project_dir.name)
-            if (clean_name.lower() == project_name.lower() or
-                    project_dir.name.lower() == project_name.lower()):
-                logger.debug(f"Found project: {project_dir}")
-                return project_dir
-
+    # Determine which sources to search
+    # None means search all sources (consistent with list_all_projects)
+    search_claude = source_filter is None or source_filter == ChatSource.CLAUDE_DESKTOP
+    search_kiro = source_filter is None or source_filter == ChatSource.KIRO_IDE
+    
+    # Search Claude Desktop projects
+    if search_claude:
+        claude_dir = config.claude_projects_dir
+        if claude_dir.exists():
+            for project_dir in claude_dir.iterdir():
+                if project_dir.is_dir():
+                    clean_name = clean_project_name(project_dir.name)
+                    if (clean_name.lower() == project_name.lower() or
+                            project_dir.name.lower() == project_name.lower()):
+                        logger.debug(f"Found Claude project: {project_dir}")
+                        return project_dir
+    
+    # Search Kiro IDE projects
+    if search_kiro:
+        if config.validate_kiro_directory():
+            try:
+                from .kiro_projects import discover_kiro_workspaces
+                kiro_workspaces = discover_kiro_workspaces(config.kiro_data_dir)
+                
+                for workspace in kiro_workspaces:
+                    # Match against workspace name
+                    if workspace.workspace_name.lower() == project_name.lower():
+                        logger.debug(f"Found Kiro workspace: {workspace.workspace_path}")
+                        return Path(workspace.workspace_path)
+                    
+                    # Also try matching against the base name of the path
+                    workspace_basename = Path(workspace.workspace_path).name
+                    if workspace_basename.lower() == project_name.lower():
+                        logger.debug(f"Found Kiro workspace by path: {workspace.workspace_path}")
+                        return Path(workspace.workspace_path)
+            except Exception as e:
+                logger.warning(f"Error searching Kiro projects: {e}")
+    
     logger.warning(f"Project not found: {project_name}")
     return None
 
 
-def search_projects_by_name(search_term: str) -> List[ProjectInfo]:
+def search_projects_by_name(search_term: str, source_filter: Optional[ChatSource] = None) -> List[ProjectInfo]:
     """Search for projects containing the search term in their name.
 
     Args:
         search_term: The term to search for in project names.
+        source_filter: Filter by source (None = all sources).
 
     Returns:
         List of matching ProjectInfo objects.
     """
-    claude_dir = config.claude_projects_dir
-
-    if not claude_dir.exists():
-        logger.warning(f"Claude projects directory not found: {claude_dir}")
+    try:
+        all_projects = list_all_projects(source_filter)
+        found_projects = [
+            p for p in all_projects
+            if search_term.lower() in p.name.lower()
+        ]
+        logger.info(f"Found {len(found_projects)} projects matching '{search_term}'")
+        return found_projects
+    except ProjectNotFoundError:
+        logger.warning("Cannot search projects: No valid source directories found")
         return []
 
-    found_projects = []
-    for project_dir in claude_dir.iterdir():
-        if project_dir.is_dir():
-            clean_name = clean_project_name(project_dir.name)
-            if (search_term.lower() in clean_name.lower() or
-                    search_term.lower() in project_dir.name.lower()):
-                info = get_project_info(project_dir)
-                found_projects.append(info)
-                logger.debug(f"Found matching project: {clean_name}")
 
-    logger.info(f"Found {len(found_projects)} projects matching '{search_term}'")
-    return found_projects
-
-
-def get_recent_projects(count: int = 10) -> List[ProjectInfo]:
+def get_recent_projects(count: int = 10, source_filter: Optional[ChatSource] = None) -> List[ProjectInfo]:
     """Get most recently modified projects.
 
     Args:
         count: Maximum number of projects to return.
+        source_filter: Filter by source (None = all sources).
 
     Returns:
         List of ProjectInfo objects sorted by modification time (most recent first).
     """
     try:
-        all_projects = list_all_projects()
+        all_projects = list_all_projects(source_filter)
 
         # Filter projects with valid timestamps
         projects_with_time = [p for p in all_projects if p.sort_timestamp is not None]
@@ -160,7 +223,7 @@ def get_recent_projects(count: int = 10) -> List[ProjectInfo]:
         logger.info(f"Retrieved {min(count, len(projects_with_time))} recent projects")
         return projects_with_time[:count]
     except ProjectNotFoundError:
-        logger.error("Cannot get recent projects: Claude directory not found")
+        logger.error("Cannot get recent projects: No valid source directories found")
         return []
 
 

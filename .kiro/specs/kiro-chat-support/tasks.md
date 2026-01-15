@@ -108,16 +108,16 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
     - Test source filter parsing
     - _Requirements: 5.1, 5.2, 5.3_
 
-- [ ] 7. Add CLI source flag
-  - [ ] 7.1 Add --source argument to claude-chat-manager.py
+- [x] 7. Add CLI source flag
+  - [x] 7.1 Add --source argument to claude-chat-manager.py
     - Add argparse argument with choices ['claude', 'kiro', 'all']
     - Default to 'claude'
     - _Requirements: 3.1, 3.3_
-  - [ ] 7.2 Wire source flag to project listing
+  - [x] 7.2 Wire source flag to project listing
     - Pass source filter to project discovery functions
     - Filter results based on source
     - _Requirements: 3.3, 3.5_
-  - [ ] 7.3 Write unit tests for CLI source flag
+  - [x] 7.3 Write unit tests for CLI source flag
     - Test default behavior (claude only)
     - Test --source kiro
     - Test --source all
