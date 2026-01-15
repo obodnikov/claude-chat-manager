@@ -142,16 +142,16 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
     - **Property 7: Project Source Indication**
     - **Validates: Requirements 3.2**
 
-- [ ] 9. Checkpoint - Ensure integration tests pass
+- [x] 9. Checkpoint - Ensure integration tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 10. Extend formatters for Kiro content
-  - [ ] 10.1 Update formatters.py for structured content
+- [x] 10. Extend formatters for Kiro content
+  - [x] 10.1 Update formatters.py for structured content
     - Handle array content blocks in message formatting
     - Add special formatting for tool use blocks
     - Add [Image] indicator for image references
     - _Requirements: 8.1, 8.2, 8.3, 8.4_
-  - [ ] 10.2 Write property test for special block formatting
+  - [x] 10.2 Write property test for special block formatting
     - **Property 11: Special Block Formatting**
     - **Validates: Requirements 8.2, 8.3**
 

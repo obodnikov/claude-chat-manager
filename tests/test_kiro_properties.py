@@ -1019,3 +1019,262 @@ class TestProperty7ProjectSourceIndication:
                     assert project.source != ChatSource.UNKNOWN, \
                         f"Recent project must not have UNKNOWN source"
 
+
+
+class TestProperty11SpecialBlockFormatting:
+    """Property 11: Special Block Formatting.
+    
+    Feature: kiro-chat-support, Property 11: Special Block Formatting
+    Validates: Requirements 8.2, 8.3
+    
+    For any Kiro message containing tool use blocks or image references, formatting
+    the message SHALL produce output that contains distinct markers for these special
+    blocks (e.g., "[Tool: name]" or "[Image]").
+    """
+
+    @settings(max_examples=100)
+    @given(
+        tool_names=st.lists(
+            st.text(min_size=1, max_size=30, alphabet=st.characters(
+                whitelist_categories=('Lu', 'Ll', 'Nd'),
+                whitelist_characters='_-'
+            )),
+            min_size=1,
+            max_size=5
+        )
+    )
+    def test_tool_use_blocks_have_markers(self, tool_names):
+        """Property test: Tool use blocks produce distinct markers."""
+        # Feature: kiro-chat-support, Property 11: Special Block Formatting
+        
+        from src.formatters import format_content
+        
+        # Arrange: Create content with tool use blocks
+        content = []
+        for name in tool_names:
+            content.append({
+                'type': 'tool_use',
+                'name': name,
+                'input': {}
+            })
+        
+        # Act: Format the content
+        result = format_content(content, 'assistant')
+        
+        # Assert: Each tool name appears in a marker
+        for name in tool_names:
+            assert f'[Tool Use: {name}]' in result, \
+                f"Tool use marker for '{name}' should appear in formatted output"
+
+    @settings(max_examples=100)
+    @given(num_images=st.integers(min_value=1, max_value=10))
+    def test_image_blocks_have_markers(self, num_images):
+        """Property test: Image blocks produce distinct markers."""
+        # Feature: kiro-chat-support, Property 11: Special Block Formatting
+        
+        from src.formatters import format_content
+        
+        # Arrange: Create content with image blocks
+        content = []
+        for i in range(num_images):
+            # Test both image_url and image types
+            if i % 2 == 0:
+                content.append({
+                    'type': 'image_url',
+                    'image_url': {'url': f'http://example.com/img{i}.png'}
+                })
+            else:
+                content.append({
+                    'type': 'image',
+                    'source': {'data': f'base64data{i}'}
+                })
+        
+        # Act: Format the content
+        result = format_content(content, 'user')
+        
+        # Assert: Image markers appear for each image
+        image_count = result.count('[Image]')
+        assert image_count == num_images, \
+            f"Should have {num_images} image markers, found {image_count}"
+
+    @settings(max_examples=100)
+    @given(
+        num_tools=st.integers(min_value=1, max_value=5),
+        num_images=st.integers(min_value=1, max_value=5),
+        text_blocks=st.lists(st.text(min_size=1, max_size=50), min_size=0, max_size=3)
+    )
+    def test_mixed_special_blocks_all_marked(self, num_tools, num_images, text_blocks):
+        """Property test: Mixed content with special blocks all have markers."""
+        # Feature: kiro-chat-support, Property 11: Special Block Formatting
+        
+        from src.formatters import format_content
+        
+        # Arrange: Create mixed content
+        content = []
+        
+        # Add text blocks
+        for text in text_blocks:
+            content.append({'type': 'text', 'text': text})
+        
+        # Add tool use blocks
+        tool_names = []
+        for i in range(num_tools):
+            name = f'tool{i}'
+            tool_names.append(name)
+            content.append({
+                'type': 'tool_use',
+                'name': name,
+                'input': {}
+            })
+        
+        # Add image blocks
+        for i in range(num_images):
+            content.append({
+                'type': 'image_url',
+                'image_url': {'url': f'img{i}.png'}
+            })
+        
+        # Act: Format the content
+        result = format_content(content, 'assistant')
+        
+        # Assert: All tool markers present
+        for name in tool_names:
+            assert f'[Tool Use: {name}]' in result, \
+                f"Tool marker for '{name}' should be present"
+        
+        # Assert: All image markers present
+        image_count = result.count('[Image]')
+        assert image_count == num_images, \
+            f"Should have {num_images} image markers, found {image_count}"
+        
+        # Assert: All non-empty text blocks present (after stripping)
+        # Note: The formatter strips whitespace from text blocks
+        for text in text_blocks:
+            stripped_text = text.strip()
+            if stripped_text:  # Only check non-empty stripped text
+                assert stripped_text in result, \
+                    f"Text block '{stripped_text}' should be present in output"
+
+    @settings(max_examples=100)
+    @given(
+        tool_name=st.text(min_size=1, max_size=50, alphabet=st.characters(
+            whitelist_categories=('Lu', 'Ll', 'Nd'),
+            whitelist_characters='_-. '
+        ))
+    )
+    def test_tool_marker_format_consistent(self, tool_name):
+        """Property test: Tool markers follow consistent format."""
+        # Feature: kiro-chat-support, Property 11: Special Block Formatting
+        
+        from src.formatters import format_content
+        
+        # Arrange: Create content with tool use
+        content = [{
+            'type': 'tool_use',
+            'name': tool_name,
+            'input': {'param': 'value'}
+        }]
+        
+        # Act: Format the content
+        result = format_content(content, 'assistant')
+        
+        # Assert: Marker follows format "[Tool Use: {name}]"
+        expected_marker = f'[Tool Use: {tool_name}]'
+        assert expected_marker in result, \
+            f"Tool marker should follow format '[Tool Use: {{name}}]'"
+
+    @settings(max_examples=100)
+    @given(
+        content_blocks=st.lists(
+            st.one_of(
+                st.fixed_dictionaries({
+                    'type': st.just('tool_use'),
+                    'name': st.text(min_size=1, max_size=20, alphabet=st.characters(
+                        whitelist_categories=('Lu', 'Ll')
+                    )),
+                    'input': st.just({})
+                }),
+                st.fixed_dictionaries({
+                    'type': st.just('image_url'),
+                    'image_url': st.fixed_dictionaries({
+                        'url': st.text(min_size=1, max_size=50)
+                    })
+                }),
+                st.fixed_dictionaries({
+                    'type': st.just('image'),
+                    'source': st.just({'data': 'base64'})
+                })
+            ),
+            min_size=1,
+            max_size=10
+        )
+    )
+    def test_special_blocks_never_empty_output(self, content_blocks):
+        """Property test: Special blocks always produce non-empty output."""
+        # Feature: kiro-chat-support, Property 11: Special Block Formatting
+        
+        from src.formatters import format_content
+        
+        # Act: Format the content
+        result = format_content(content_blocks, 'user')
+        
+        # Assert: Output is non-empty
+        assert len(result) > 0, \
+            "Formatting special blocks should produce non-empty output"
+        
+        # Assert: Output contains at least one marker
+        has_tool_marker = '[Tool Use:' in result
+        has_image_marker = '[Image]' in result
+        assert has_tool_marker or has_image_marker, \
+            "Output should contain at least one special block marker"
+
+    @settings(max_examples=100)
+    @given(
+        num_special_blocks=st.integers(min_value=1, max_value=15)
+    )
+    def test_marker_count_matches_block_count(self, num_special_blocks):
+        """Property test: Number of markers matches number of special blocks."""
+        # Feature: kiro-chat-support, Property 11: Special Block Formatting
+        
+        from src.formatters import format_content
+        
+        # Arrange: Create content with known number of special blocks
+        content = []
+        expected_tool_count = 0
+        expected_image_count = 0
+        
+        for i in range(num_special_blocks):
+            if i % 3 == 0:
+                # Tool use block
+                content.append({
+                    'type': 'tool_use',
+                    'name': f'tool{i}',
+                    'input': {}
+                })
+                expected_tool_count += 1
+            elif i % 3 == 1:
+                # Image URL block
+                content.append({
+                    'type': 'image_url',
+                    'image_url': {'url': f'img{i}.png'}
+                })
+                expected_image_count += 1
+            else:
+                # Image block
+                content.append({
+                    'type': 'image',
+                    'source': {'data': 'base64'}
+                })
+                expected_image_count += 1
+        
+        # Act: Format the content
+        result = format_content(content, 'assistant')
+        
+        # Assert: Marker counts match
+        actual_tool_count = result.count('[Tool Use:')
+        actual_image_count = result.count('[Image]')
+        
+        assert actual_tool_count == expected_tool_count, \
+            f"Should have {expected_tool_count} tool markers, found {actual_tool_count}"
+        assert actual_image_count == expected_image_count, \
+            f"Should have {expected_image_count} image markers, found {actual_image_count}"
