@@ -6,19 +6,19 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
 
 ## Tasks
 
-- [ ] 1. Extend data models for multi-source support
-  - [ ] 1.1 Add ChatSource enum to models.py
+- [x] 1. Extend data models for multi-source support
+  - [x] 1.1 Add ChatSource enum to models.py
     - Create `ChatSource` enum with CLAUDE_DESKTOP, KIRO_IDE, UNKNOWN values
     - _Requirements: 7.1, 7.2_
-  - [ ] 1.2 Extend ChatMessage dataclass with source field
+  - [x] 1.2 Extend ChatMessage dataclass with source field
     - Add optional `source: ChatSource` field
     - Add optional `execution_id` and `context_items` fields for Kiro
     - _Requirements: 7.1, 7.3_
-  - [ ] 1.3 Extend ProjectInfo dataclass with source field
+  - [x] 1.3 Extend ProjectInfo dataclass with source field
     - Add `source: ChatSource` field
     - Add optional `workspace_path` and `session_ids` fields for Kiro
     - _Requirements: 7.2_
-  - [ ] 1.4 Write unit tests for extended models
+  - [x] 1.4 Write unit tests for extended models
     - Test ChatSource enum values
     - Test ChatMessage with source field
     - Test ProjectInfo with Kiro-specific fields
