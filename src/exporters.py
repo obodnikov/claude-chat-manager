@@ -426,9 +426,13 @@ def export_chat_book(chat_data: List[Dict[str, Any]], sanitize: Optional[bool] =
         role = message.get('role', entry.get('type', 'unknown'))
         content = message.get('content', '')
 
-        # Skip system messages
-        if role not in ('user', 'assistant'):
+        # Skip system messages - handle both Claude and Kiro role names
+        if role not in ('user', 'assistant', 'human', 'bot'):
             continue
+        
+        # Normalize role names for consistent handling
+        is_user = role in ('user', 'human')
+        is_assistant = role in ('assistant', 'bot')
 
         # Extract clean content (filter tool noise if configured)
         if config.book_filter_tool_noise:
@@ -439,7 +443,7 @@ def export_chat_book(chat_data: List[Dict[str, Any]], sanitize: Optional[bool] =
             files = []
 
         # For user messages, clean system tags
-        if role == 'user':
+        if is_user:
             if config.book_filter_system_tags:
                 text = chat_filter.clean_user_message(text)
                 # Skip if message was purely system notification
@@ -455,7 +459,7 @@ def export_chat_book(chat_data: List[Dict[str, Any]], sanitize: Optional[bool] =
             output_lines.append('👤 **USER:**\n')
             output_lines.append(f'> {text}\n\n')
 
-        elif role == 'assistant':
+        elif is_assistant:
             if not text or not text.strip():
                 continue
 
@@ -526,7 +530,8 @@ def export_project_chats(
     export_dir: Path,
     format_type: str = 'markdown',
     api_key: Optional[str] = None,
-    sanitize: Optional[bool] = None
+    sanitize: Optional[bool] = None,
+    source: ChatSource = ChatSource.CLAUDE_DESKTOP
 ) -> List[Path]:
     """Export all chats in a project to a directory.
 
@@ -542,6 +547,7 @@ def export_project_chats(
         format_type: Export format (markdown, book).
         api_key: OpenRouter API key for LLM title generation (optional).
         sanitize: Override .env sanitization setting (True/False/None).
+        source: Chat source type (Claude Desktop or Kiro IDE).
 
     Returns:
         List of exported file paths.
@@ -553,7 +559,12 @@ def export_project_chats(
         # Create export directory
         os.makedirs(export_dir, exist_ok=True)
 
-        chat_files = list(project_path.glob('*.jsonl'))
+        # Get chat files based on source type
+        if source == ChatSource.KIRO_IDE:
+            chat_files = [f for f in project_path.glob('*.json') if f.name != 'sessions.json']
+        else:
+            chat_files = list(project_path.glob('*.jsonl'))
+        
         exported_files = []
         filtered_count = 0
 
@@ -586,16 +597,36 @@ def export_project_chats(
 
         for chat_file in chat_files:
             # Parse chat data for filtering and title generation
-            chat_data = parse_jsonl_file(chat_file)
+            try:
+                if source == ChatSource.KIRO_IDE:
+                    kiro_session = parse_kiro_chat_file(chat_file)
+                    # Convert KiroChatSession messages to ChatMessage objects
+                    chat_data = []
+                    for msg in kiro_session.messages:
+                        role = msg.get('role', 'unknown')
+                        content = msg.get('content', '')
+                        chat_data.append(ChatMessage(
+                            role=role,
+                            content=content,
+                            source=ChatSource.KIRO_IDE,
+                            execution_id=kiro_session.execution_id
+                        ))
+                else:
+                    chat_data = parse_jsonl_file(chat_file)
+            except Exception as e:
+                logger.warning(f"Failed to parse chat file {chat_file.name}: {e}, skipping")
+                continue
 
-            # Filter trivial chats for book format
-            if chat_filter and chat_filter.is_pointless_chat(chat_data):
+            # Filter trivial chats for book format (only for Claude Desktop format)
+            # Kiro uses ChatMessage objects which the filter doesn't support yet
+            if chat_filter and source != ChatSource.KIRO_IDE and chat_filter.is_pointless_chat(chat_data):
                 logger.info(f"Filtering out trivial chat: {chat_file.name}")
                 filtered_count += 1
                 continue
 
             # Generate filename
-            if format_type == 'book' and config.book_generate_titles:
+            if format_type == 'book' and config.book_generate_titles and source != ChatSource.KIRO_IDE:
+                # Title generation only works with Claude Desktop format for now
                 filename = _generate_book_filename(
                     chat_data,
                     chat_file,

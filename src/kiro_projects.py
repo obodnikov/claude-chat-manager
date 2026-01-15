@@ -116,8 +116,8 @@ def list_kiro_sessions(workspace_dir: Path) -> List[KiroSession]:
         date_created = session.get('dateCreated', '')
         workspace_directory = session.get('workspaceDirectory', '')
         
-        # Construct path to the .chat file (Kiro session files use .chat extension)
-        chat_file_path = workspace_dir / f"{session_id}.chat"
+        # Construct path to the .json file (Kiro session files use .json extension)
+        chat_file_path = workspace_dir / f"{session_id}.json"
         
         kiro_sessions.append(KiroSession(
             session_id=session_id,

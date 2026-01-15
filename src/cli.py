@@ -229,11 +229,16 @@ def browse_project_interactive(project_info: ProjectInfo) -> bool:
     Returns:
         True to return to main menu, False to quit.
     """
-    project_name = clean_project_name(project_info.path.name)
+    # Use project_info.name directly (already cleaned/decoded for Kiro projects)
+    # For Claude Desktop, clean_project_name handles the path-based name
+    if project_info.source == ChatSource.KIRO_IDE:
+        project_name = project_info.name
+    else:
+        project_name = clean_project_name(project_info.path.name)
     chat_files = get_project_chat_files(project_info.path, project_info.source)
 
     if not chat_files:
-        file_type = ".chat" if project_info.source == ChatSource.KIRO_IDE else "JSONL"
+        file_type = ".json" if project_info.source == ChatSource.KIRO_IDE else "JSONL"
         print_colored(f"No {file_type} chat files found in project: {project_name}", Colors.YELLOW)
         return True
 
@@ -294,7 +299,7 @@ def browse_project_interactive(project_info: ProjectInfo) -> bool:
                 export_dir = Path(get_export_dirname(project_name, 'markdown'))
                 print_colored(f"📤 Exporting all chats to markdown in: {export_dir}", Colors.BLUE)
 
-                exported_files = export_project_chats(project_path, export_dir, 'markdown')
+                exported_files = export_project_chats(project_info.path, export_dir, 'markdown', source=project_info.source)
 
                 print_colored(f"✅ All chats exported to: {export_dir}/", Colors.GREEN)
                 for file in exported_files:
@@ -305,7 +310,7 @@ def browse_project_interactive(project_info: ProjectInfo) -> bool:
                 export_dir = Path(get_export_dirname(project_name, 'book'))
                 print_colored(f"📚 Exporting all chats to book format in: {export_dir}", Colors.BLUE)
 
-                exported_files = export_project_chats(project_path, export_dir, 'book')
+                exported_files = export_project_chats(project_info.path, export_dir, 'book', source=project_info.source)
 
                 print_colored(f"✅ All chats exported to book format: {export_dir}/", Colors.GREEN)
                 for file in exported_files:

@@ -63,23 +63,39 @@ def parse_kiro_chat_file(file_path: Path) -> KiroChatSession:
     # Extract session data
     session_id = file_path.stem  # Use filename as session ID
     execution_id = chat_data.get('executionId')
-    context = chat_data.get('context', [])
-    messages = chat_data.get('chat', [])
+    context = chat_data.get('context', chat_data.get('contextItems', []))
     
-    # Try to extract title from first user message
-    title = "Untitled Session"
-    for msg in messages:
-        if msg.get('role') == 'human':
-            content = msg.get('content', '')
-            if isinstance(content, str):
-                title = content[:50]  # Truncate to 50 chars
-            elif isinstance(content, list) and len(content) > 0:
-                # Extract from first text block
-                for block in content:
-                    if isinstance(block, dict) and block.get('type') == 'text':
-                        title = block.get('text', '')[:50]
-                        break
-            break
+    # Kiro uses 'history' array, each entry has 'message' with role/content
+    # Fall back to 'chat' for compatibility with test fixtures
+    history = chat_data.get('history', chat_data.get('chat', []))
+    
+    # Convert history entries to message format
+    messages = []
+    for entry in history:
+        if isinstance(entry, dict):
+            # Real Kiro format: entry has 'message' key
+            if 'message' in entry:
+                messages.append(entry['message'])
+            # Test fixture format: entry is the message directly
+            elif 'role' in entry:
+                messages.append(entry)
+    
+    # Try to extract title from session data or first user message
+    title = chat_data.get('title', "Untitled Session")
+    if title == "Untitled Session":
+        for msg in messages:
+            role = msg.get('role', '')
+            if role in ('user', 'human'):
+                content = msg.get('content', '')
+                if isinstance(content, str):
+                    title = content[:50]  # Truncate to 50 chars
+                elif isinstance(content, list) and len(content) > 0:
+                    # Extract from first text block
+                    for block in content:
+                        if isinstance(block, dict) and block.get('type') == 'text':
+                            title = block.get('text', '')[:50]
+                            break
+                break
     
     return KiroChatSession(
         session_id=session_id,

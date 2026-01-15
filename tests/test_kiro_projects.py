@@ -88,7 +88,7 @@ class TestListKiroSessions:
             assert sessions[0].title == "First Session"
             assert sessions[0].date_created == "1234567890000"
             assert sessions[0].workspace_directory == "C:\\workspace"
-            assert sessions[0].chat_file_path == workspace_dir / "session-1.chat"
+            assert sessions[0].chat_file_path == workspace_dir / "session-1.json"
             
             assert sessions[1].session_id == "session-2"
             assert sessions[1].title == "Second Session"

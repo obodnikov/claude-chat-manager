@@ -273,9 +273,10 @@ def get_project_chat_files(project_path: Path, source: ChatSource = ChatSource.C
         return []
 
     if source == ChatSource.KIRO_IDE:
-        # For Kiro, look for .chat files (Kiro session files)
-        chat_files = list(project_path.glob('*.chat'))
-        # No need to filter - all .chat files are session files
+        # For Kiro, look for .json files (Kiro session files)
+        chat_files = list(project_path.glob('*.json'))
+        # Filter out sessions.json which is metadata, not a chat file
+        chat_files = [f for f in chat_files if f.name != 'sessions.json']
     else:
         # For Claude Desktop, look for JSONL files
         chat_files = list(project_path.glob('*.jsonl'))
