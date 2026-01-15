@@ -46,3 +46,10 @@ class ExportError(ClaudeReaderError):
     """Raised when export operation fails."""
 
     pass
+
+
+
+class InvalidChatFileError(ClaudeReaderError):
+    """Raised when a chat file (JSONL or JSON) is malformed or invalid."""
+
+    pass
