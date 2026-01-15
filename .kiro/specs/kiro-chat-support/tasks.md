@@ -18,7 +18,7 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
     - Add `source: ChatSource` field
     - Add optional `workspace_path` and `session_ids` fields for Kiro
     - _Requirements: 7.2_
-  - [ ]* 1.4 Write unit tests for extended models
+  - [ ] 1.4 Write unit tests for extended models
     - Test ChatSource enum values
     - Test ChatMessage with source field
     - Test ProjectInfo with Kiro-specific fields
@@ -41,15 +41,15 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
     - Raise ChatFileNotFoundError for missing files
     - Raise InvalidChatFileError for invalid JSON
     - _Requirements: 1.4, 1.5_
-  - [ ]* 2.5 Write unit tests for kiro_parser
+  - [ ] 2.5 Write unit tests for kiro_parser
     - Test parsing valid .chat files
     - Test structured content handling
     - Test error cases
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
-  - [ ]* 2.6 Write property test for message count preservation
+  - [ ] 2.6 Write property test for message count preservation
     - **Property 1: Kiro Chat Parsing Preserves Message Structure**
     - **Validates: Requirements 1.1, 1.2**
-  - [ ]* 2.7 Write property test for content normalization
+  - [ ] 2.7 Write property test for content normalization
     - **Property 10: Content Normalization Transparency**
     - **Validates: Requirements 8.1, 8.4**
 
@@ -73,15 +73,15 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
     - Calculate session count, last modified date
     - Extract human-readable workspace name
     - _Requirements: 2.3_
-  - [ ]* 4.5 Write unit tests for kiro_projects
+  - [ ] 4.5 Write unit tests for kiro_projects
     - Test workspace discovery
     - Test base64 decoding
     - Test sessions.json parsing
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
-  - [ ]* 4.6 Write property test for base64 round-trip
+  - [ ] 4.6 Write property test for base64 round-trip
     - **Property 4: Base64 Workspace Path Round-Trip**
     - **Validates: Requirements 2.2**
-  - [ ]* 4.7 Write property test for session discovery completeness
+  - [ ] 4.7 Write property test for session discovery completeness
     - **Property 5: Session Discovery Completeness**
     - **Validates: Requirements 2.4, 2.5**
 
@@ -102,7 +102,7 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
     - Add KIRO_DATA_DIR example
     - Add CHAT_SOURCE example
     - _Requirements: 5.1, 5.3_
-  - [ ]* 6.4 Write unit tests for Kiro configuration
+  - [ ] 6.4 Write unit tests for Kiro configuration
     - Test OS-specific default paths
     - Test environment variable overrides
     - Test source filter parsing
@@ -117,7 +117,7 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
     - Pass source filter to project discovery functions
     - Filter results based on source
     - _Requirements: 3.3, 3.5_
-  - [ ]* 7.3 Write unit tests for CLI source flag
+  - [ ] 7.3 Write unit tests for CLI source flag
     - Test default behavior (claude only)
     - Test --source kiro
     - Test --source all
@@ -135,10 +135,10 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
   - [ ] 8.3 Add source indicator to project display
     - Show [Claude] or [Kiro] prefix in project listings
     - _Requirements: 3.2_
-  - [ ]* 8.4 Write property test for source filtering
+  - [ ] 8.4 Write property test for source filtering
     - **Property 6: Source Filtering Correctness**
     - **Validates: Requirements 3.3, 3.5**
-  - [ ]* 8.5 Write property test for source indication
+  - [ ] 8.5 Write property test for source indication
     - **Property 7: Project Source Indication**
     - **Validates: Requirements 3.2**
 
@@ -151,7 +151,7 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
     - Add special formatting for tool use blocks
     - Add [Image] indicator for image references
     - _Requirements: 8.1, 8.2, 8.3, 8.4_
-  - [ ]* 10.2 Write property test for special block formatting
+  - [ ] 10.2 Write property test for special block formatting
     - **Property 11: Special Block Formatting**
     - **Validates: Requirements 8.2, 8.3**
 
@@ -167,10 +167,10 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
   - [ ] 11.3 Implement batch export for Kiro workspaces
     - Export all sessions in a workspace to output directory
     - _Requirements: 4.5_
-  - [ ]* 11.4 Write property test for export format support
+  - [ ] 11.4 Write property test for export format support
     - **Property 8: Export Format Support**
     - **Validates: Requirements 4.1**
-  - [ ]* 11.5 Write property test for filename generation
+  - [ ] 11.5 Write property test for filename generation
     - **Property 9: Filename Generation From Content**
     - **Validates: Requirements 4.3**
 
@@ -197,7 +197,7 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
 
 ## Notes
 
-- Tasks marked with `*` are optional and can be skipped for faster MVP
+- All tasks are required for comprehensive implementation
 - Each task references specific requirements for traceability
 - Checkpoints ensure incremental validation
 - Property tests validate universal correctness properties
