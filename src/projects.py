@@ -102,9 +102,11 @@ def list_all_projects(source_filter: Optional[ChatSource] = None) -> List[Projec
                 for workspace in kiro_workspaces:
                     # TODO: Calculate total_messages by parsing session files for accurate counts
                     # Currently set to 0 to avoid expensive I/O operations during listing
+                    # For Kiro: path points to session_dir (where .chat files are stored)
+                    # workspace_path stores the decoded human-readable workspace path
                     projects.append(ProjectInfo(
                         name=workspace.workspace_name,
-                        path=Path(workspace.workspace_path),
+                        path=workspace.session_dir,
                         file_count=workspace.session_count,
                         total_messages=0,  # Deferred: requires parsing all session files
                         last_modified=workspace.last_modified,
@@ -174,9 +176,10 @@ def find_project_by_name(project_name: str, source_filter: Optional[ChatSource] 
                     if workspace.workspace_name.lower() == project_name.lower():
                         logger.debug(f"Found Kiro workspace: {workspace.workspace_path}")
                         # Return ProjectInfo for Kiro workspace
+                        # path points to session_dir where .chat files are stored
                         return ProjectInfo(
                             name=workspace.workspace_name,
-                            path=Path(workspace.workspace_path),
+                            path=workspace.session_dir,
                             file_count=workspace.session_count,
                             total_messages=0,  # Not calculated for single project lookup
                             last_modified=workspace.last_modified,
@@ -191,7 +194,7 @@ def find_project_by_name(project_name: str, source_filter: Optional[ChatSource] 
                         logger.debug(f"Found Kiro workspace by path: {workspace.workspace_path}")
                         return ProjectInfo(
                             name=workspace.workspace_name,
-                            path=Path(workspace.workspace_path),
+                            path=workspace.session_dir,
                             file_count=workspace.session_count,
                             total_messages=0,
                             last_modified=workspace.last_modified,
