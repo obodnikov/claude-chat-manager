@@ -716,8 +716,19 @@ def export_project_chats(
 
         # Build execution log index for Kiro files (for faster lookups)
         execution_log_index = None
+        kiro_data_dir = None
+        use_execution_logs = format_type in ('book', 'wiki') and source == ChatSource.KIRO_IDE
+        
         if source == ChatSource.KIRO_IDE:
-            execution_log_index = build_execution_log_index(project_path)
+            # project_path is typically workspace-sessions/<encoded-path>
+            # kiro_data_dir is the parent kiro.kiroagent directory
+            kiro_data_dir = project_path.parent.parent
+            
+            # Validate kiro_data_dir
+            if kiro_data_dir.exists():
+                execution_log_index = build_execution_log_index(kiro_data_dir)
+            else:
+                logger.warning(f"kiro_data_dir not found: {kiro_data_dir}")
 
         for chat_file in chat_files:
             # Parse chat data for filtering and title generation
@@ -726,7 +737,9 @@ def export_project_chats(
                 chat_data, detected_source, errors = _load_chat_data(
                     chat_file,
                     workspace_dir=project_path,
-                    execution_log_index=execution_log_index
+                    execution_log_index=execution_log_index,
+                    use_execution_logs=use_execution_logs,
+                    kiro_data_dir=kiro_data_dir
                 )
                 
                 # Log enrichment errors using standardized logging
