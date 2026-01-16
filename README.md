@@ -697,6 +697,36 @@ All existing features work with Kiro chats:
 - **Image References**: Image blocks display as `[Image]` in text exports
 - **Session Titles**: Uses Kiro's session title or first user message for filenames
 
+### Execution Log Enrichment
+
+Kiro stores chat data in two locations:
+1. **`.chat` files** - Contain brief bot acknowledgments like "On it." or "I'll help with that."
+2. **Execution log files** - Contain the full bot responses with complete explanations
+
+When exporting Kiro chats, the tool automatically enriches bot messages by:
+1. Finding the corresponding execution log for each chat session
+2. Extracting full bot responses from the `messagesFromExecutionId` array
+3. Replacing brief acknowledgments with complete responses
+
+**This happens automatically** - no configuration needed. Your exports will contain the full conversation content.
+
+**Error Handling:**
+
+If execution logs are missing or corrupted, the tool:
+- Logs a warning message (visible in verbose mode or log files)
+- Continues with the original brief response from the `.chat` file
+- Does not fail the entire export
+
+Common scenarios:
+| Scenario | Behavior |
+|----------|----------|
+| Execution log found | Full bot response in export ✅ |
+| Execution log missing | Brief response preserved, warning logged ⚠️ |
+| Execution log corrupted | Brief response preserved, error logged ⚠️ |
+| No executionId in chat | Original content used, warning logged ⚠️ |
+
+**Note:** Execution logs are stored in hash-named subdirectories within the workspace. The tool scans these directories automatically to build an index for efficient lookups.
+
 ## 🛠️ What's New
 
 ### v2.3.0 - Kiro IDE Support (January 2026)

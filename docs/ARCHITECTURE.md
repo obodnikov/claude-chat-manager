@@ -183,6 +183,7 @@ claude-chat-manager/
 - Base64 workspace path decoding
 - Structured content normalization (array → string)
 - Session metadata extraction from `sessions.json`
+- Execution log enrichment (full bot responses)
 
 **Key Classes:**
 - `KiroChatSession` - Parsed Kiro chat session data
@@ -192,10 +193,33 @@ claude-chat-manager/
 **Key Functions:**
 - `parse_kiro_chat_file()` - Parse Kiro .chat JSON files
 - `extract_kiro_messages()` - Extract ChatMessage objects from Kiro data
+- `extract_kiro_messages_enriched()` - Extract with execution log enrichment
 - `normalize_kiro_content()` - Convert structured content to plain text
 - `discover_kiro_workspaces()` - Find all Kiro workspaces
 - `decode_workspace_path()` - Decode base64 workspace paths
 - `list_kiro_sessions()` - List sessions in a workspace
+- `build_execution_log_index()` - Build executionId → file path mapping
+- `enrich_chat_with_execution_log()` - Replace brief responses with full text
+
+**Execution Log Enrichment:**
+
+Kiro `.chat` files contain brief bot acknowledgments. Full responses are in execution logs:
+
+```
+workspace-sessions/{workspace}/
+├── {session}.chat              # Brief: "On it."
+└── {hash-subdir}/
+    └── {execution-id}          # Full: Complete bot response
+```
+
+The enrichment process:
+1. Build index of execution logs (once per workspace)
+2. For each chat, find matching execution log by executionId
+3. Extract full bot responses from `messagesFromExecutionId` array
+4. Replace brief acknowledgments with full text
+5. Return enriched messages + any errors encountered
+
+Errors are logged but don't fail exports - original content is preserved.
 
 ### 4.3 Export Engine
 **Modules:** `exporters.py`, `formatters.py`, `filters.py`

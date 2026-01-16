@@ -329,6 +329,162 @@ Note: Session files use `.json` extension with UUID-based filenames (e.g., `6f77
 ]
 ```
 
+### Execution Log Structure
+
+Kiro stores full bot responses in execution log files within hash-named subdirectories:
+
+```
+workspace-sessions/
+├── {base64-encoded-workspace-path}/
+│   ├── sessions.json
+│   ├── {session-id}.chat           # Brief bot responses
+│   └── {hash-subdir}/              # Execution log directory
+│       └── {execution-id}          # No extension, JSON content
+```
+
+**Execution Log File Format:**
+
+```json
+{
+  "executionId": "uuid-matching-chat-file",
+  "messagesFromExecutionId": [
+    {
+      "role": "bot",
+      "entries": [
+        {
+          "type": "text",
+          "text": "Full bot response text here..."
+        },
+        {
+          "type": "toolUse",
+          "name": "readFile",
+          "input": {"path": "src/config.py"}
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Execution Log Enrichment Design
+
+### Problem Statement
+
+Kiro `.chat` files only contain brief bot acknowledgments like "On it." or "I'll help with that." The full bot responses are stored separately in execution log files. Without enrichment, exported chats would be missing the actual assistant content.
+
+### Solution Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Export Pipeline                               │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+         ┌──────────────────────────────────────┐
+         │ 1. Build Execution Log Index         │
+         │    - Scan hash-named subdirectories  │
+         │    - Map executionId → file path     │
+         └──────────────────┬───────────────────┘
+                             │
+                             ▼
+         ┌──────────────────────────────────────┐
+         │ 2. Load .chat File                   │
+         │    - Parse JSON structure            │
+         │    - Extract executionId             │
+         └──────────────────┬───────────────────┘
+                             │
+                             ▼
+         ┌──────────────────────────────────────┐
+         │ 3. Find Execution Log                │
+         │    - Lookup in index                 │
+         │    - Fall back to directory scan     │
+         └──────────────────┬───────────────────┘
+                             │
+              ┌──────────────┴──────────────┐
+              │                             │
+         Found                         Not Found
+              │                             │
+              ▼                             ▼
+┌─────────────────────────┐    ┌─────────────────────────┐
+│ 4a. Extract Bot         │    │ 4b. Use Original        │
+│     Responses           │    │     Content             │
+│ - Parse messagesFrom... │    │ - Log warning           │
+│ - Extract text entries  │    │ - Continue with brief   │
+│ - Replace in chat data  │    │   acknowledgments       │
+└─────────────┬───────────┘    └─────────────┬───────────┘
+              │                             │
+              └──────────────┬──────────────┘
+                             │
+                             ▼
+         ┌──────────────────────────────────────┐
+         │ 5. Return Enriched Messages          │
+         │    + List of Errors/Warnings         │
+         └──────────────────────────────────────┘
+```
+
+### Key Functions
+
+```python
+def find_execution_log_dirs(workspace_dir: Path) -> List[Path]:
+    """Find all hash-named subdirectories containing execution logs."""
+    pass
+
+def build_execution_log_index(workspace_dir: Path) -> Dict[str, Path]:
+    """Build mapping from executionId to log file path for fast lookups."""
+    pass
+
+def parse_execution_log(file_path: Path) -> Optional[Dict[str, Any]]:
+    """Parse an execution log file (no extension, JSON content)."""
+    pass
+
+def extract_bot_responses_from_execution_log(
+    execution_log: Dict[str, Any]
+) -> List[str]:
+    """Extract full bot text responses from messagesFromExecutionId array."""
+    pass
+
+def enrich_chat_with_execution_log(
+    chat_data: Dict[str, Any],
+    workspace_dir: Path,
+    execution_log_index: Optional[Dict[str, Path]] = None
+) -> Tuple[Dict[str, Any], List[str]]:
+    """Replace brief bot responses with full text from execution logs."""
+    pass
+
+def extract_kiro_messages_enriched(
+    chat_data: Dict[str, Any],
+    workspace_dir: Optional[Path] = None,
+    execution_log_index: Optional[Dict[str, Path]] = None
+) -> Tuple[List[ChatMessage], List[str]]:
+    """Main extraction function with automatic enrichment."""
+    pass
+```
+
+### Error Handling Strategy
+
+The enrichment process is designed to be **resilient** - it should never cause an export to fail completely.
+
+| Error Condition | Handling | User Impact |
+|-----------------|----------|-------------|
+| No executionId in chat | Log warning, use original content | Brief responses in export |
+| Execution log not found | Log warning, use original content | Brief responses in export |
+| Execution log corrupted | Log error, use original content | Brief responses in export |
+| No bot responses in log | Log warning, use original content | Brief responses in export |
+| Partial enrichment | Enrich what's possible | Mixed content quality |
+
+**Error Reporting:**
+- Errors are collected and returned alongside the enriched data
+- Errors are logged at WARNING level (visible in verbose mode)
+- Errors do NOT appear in the exported markdown files
+- Export continues even when enrichment fails
+
+### Performance Considerations
+
+1. **Index Building**: Build execution log index once per workspace export, not per chat
+2. **Lazy Loading**: Only parse execution logs when needed
+3. **Early Exit**: Skip enrichment if no executionId present
+4. **Batch Operations**: Process all chats in a workspace with shared index
+
 
 
 ## Correctness Properties

@@ -17,7 +17,7 @@ from .exceptions import ExportError
 from .filters import ChatFilter
 from .sanitizer import Sanitizer
 from .config import config
-from .kiro_parser import parse_kiro_chat_file, extract_kiro_messages
+from .kiro_parser import parse_kiro_chat_file, extract_kiro_messages, extract_kiro_messages_enriched, build_execution_log_index
 from .models import ChatSource, ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -102,18 +102,47 @@ def _convert_kiro_to_dict(messages: List[ChatMessage]) -> List[Dict[str, Any]]:
     return chat_data
 
 
-def _load_chat_data(file_path: Path) -> tuple[List[Dict[str, Any]], ChatSource]:
+def _log_enrichment_errors(errors: List[str], context: str) -> None:
+    """Log enrichment errors consistently across all export functions.
+    
+    Args:
+        errors: List of error messages from enrichment
+        context: Context string (e.g., filename) for log messages
+    """
+    for error in errors:
+        logger.warning(f"Enrichment issue for {context}: {error}")
+
+
+def _load_chat_data(
+    file_path: Path,
+    workspace_dir: Optional[Path] = None,
+    execution_log_index: Optional[Dict[str, Path]] = None
+) -> tuple[List[Dict[str, Any]], ChatSource, List[str]]:
     """Load chat data from either Claude JSONL or Kiro JSON file.
+    
+    For Kiro files, attempts to enrich bot messages with full responses
+    from execution logs if workspace_dir is provided.
     
     Args:
         file_path: Path to the chat file
+        workspace_dir: Optional workspace directory for Kiro execution log lookup
+        execution_log_index: Optional pre-built index for faster lookups
         
     Returns:
-        Tuple of (chat_data, source) where chat_data is a list of message dicts
+        Tuple of (chat_data, source, errors) where:
+        - chat_data is a list of message dicts
+        - source is the ChatSource enum
+        - errors is a list of error messages (empty for Claude Desktop)
         
     Raises:
         ExportError: If file cannot be loaded
+        
+    Note:
+        Callers should use _log_enrichment_errors() to log any returned errors
+        for consistent error reporting across the codebase.
     """
+    errors = []
+    
     try:
         # Detect source using both extension and content
         source = _detect_chat_source(file_path)
@@ -121,17 +150,44 @@ def _load_chat_data(file_path: Path) -> tuple[List[Dict[str, Any]], ChatSource]:
         if source == ChatSource.KIRO_IDE:
             # Parse Kiro chat file
             session = parse_kiro_chat_file(file_path)
-            messages = extract_kiro_messages({
-                'chat': session.messages,
-                'executionId': session.execution_id,
-                'context': session.context
-            })
+            
+            # Determine workspace directory if not provided
+            if workspace_dir is None:
+                # Try to infer from file path (file is in workspace_dir)
+                workspace_dir = file_path.parent
+                
+            # Validate workspace directory contains execution logs
+            # (look for hash-named subdirectories with extensionless files)
+            from .kiro_parser import find_execution_log_dirs
+            exec_log_dirs = find_execution_log_dirs(workspace_dir)
+            if not exec_log_dirs and session.execution_id:
+                errors.append(
+                    f"No execution log directories found in {workspace_dir}. "
+                    f"Bot responses may not be enriched."
+                )
+            
+            # Use enriched extraction to get full bot responses
+            messages, enrich_errors = extract_kiro_messages_enriched(
+                {
+                    'chat': session.messages,
+                    'executionId': session.execution_id,
+                    'context': session.context
+                },
+                workspace_dir=workspace_dir,
+                execution_log_index=execution_log_index
+            )
+            errors.extend(enrich_errors)
+            
+            # Log errors but continue with available data
+            for error in enrich_errors:
+                logger.warning(f"Kiro enrichment issue for {file_path.name}: {error}")
+            
             chat_data = _convert_kiro_to_dict(messages)
-            return chat_data, ChatSource.KIRO_IDE
+            return chat_data, ChatSource.KIRO_IDE, errors
         else:
             # Parse Claude Desktop JSONL file
             chat_data = parse_jsonl_file(file_path)
-            return chat_data, ChatSource.CLAUDE_DESKTOP
+            return chat_data, ChatSource.CLAUDE_DESKTOP, errors
             
     except (FileNotFoundError, PermissionError) as e:
         raise ExportError(f"Cannot access file {file_path}: {e}")
@@ -485,11 +541,14 @@ def export_chat_to_file(
     output_path: Path,
     format_type: str = 'markdown',
     sanitize: Optional[bool] = None,
-    verbose: bool = False
+    verbose: bool = False,
+    workspace_dir: Optional[Path] = None
 ) -> None:
     """Export a chat file to specified format and save to file.
     
     Supports both Claude Desktop JSONL and Kiro IDE JSON/chat files.
+    For Kiro files, attempts to enrich bot messages with full responses
+    from execution logs.
 
     Args:
         file_path: Path to the chat file (JSONL or .chat/.json).
@@ -497,12 +556,16 @@ def export_chat_to_file(
         format_type: Export format (pretty, markdown, book, raw).
         sanitize: Override .env sanitization setting (True/False/None).
         verbose: Include additional metadata (execution IDs, context items).
+        workspace_dir: Optional workspace directory for Kiro execution log lookup.
 
     Raises:
         ExportError: If export operation fails.
     """
     try:
-        chat_data, source = _load_chat_data(file_path)
+        chat_data, source, errors = _load_chat_data(file_path, workspace_dir=workspace_dir)
+        
+        # Report any enrichment errors using standardized logging
+        _log_enrichment_errors(errors, file_path.name)
 
         if format_type == 'markdown':
             content = export_chat_markdown(chat_data, verbose=verbose)
@@ -595,11 +658,24 @@ def export_project_chats(
             else:
                 logger.info("No API key available, using first user question for titles")
 
+        # Build execution log index for Kiro files (for faster lookups)
+        execution_log_index = None
+        if source == ChatSource.KIRO_IDE:
+            execution_log_index = build_execution_log_index(project_path)
+
         for chat_file in chat_files:
             # Parse chat data for filtering and title generation
             try:
                 # Use _load_chat_data for consistent parsing and conversion
-                chat_data, detected_source = _load_chat_data(chat_file)
+                chat_data, detected_source, errors = _load_chat_data(
+                    chat_file,
+                    workspace_dir=project_path,
+                    execution_log_index=execution_log_index
+                )
+                
+                # Log enrichment errors using standardized logging
+                _log_enrichment_errors(errors, chat_file.name)
+                    
             except Exception as e:
                 logger.warning(f"Failed to parse chat file {chat_file.name}: {e}, skipping")
                 continue
@@ -685,6 +761,9 @@ def export_kiro_workspace(
         
         logger.info(f"Exporting {len(sessions)} Kiro sessions from workspace")
         
+        # Build execution log index for faster lookups
+        execution_log_index = build_execution_log_index(workspace_dir)
+        
         for session in sessions:
             chat_file = session.chat_file_path
             
@@ -694,8 +773,15 @@ def export_kiro_workspace(
                 continue
             
             try:
-                # Load chat data for filename generation
-                chat_data, source = _load_chat_data(chat_file)
+                # Load chat data for filename generation (with enrichment)
+                chat_data, source, errors = _load_chat_data(
+                    chat_file,
+                    workspace_dir=workspace_dir,
+                    execution_log_index=execution_log_index
+                )
+                
+                # Log enrichment errors using standardized logging
+                _log_enrichment_errors(errors, chat_file.name)
                 
                 # Generate filename from session title or content
                 filename = _generate_filename_from_content(
@@ -706,8 +792,12 @@ def export_kiro_workspace(
                 
                 export_file = export_dir / f"{filename}.md"
                 
-                # Export the chat
-                export_chat_to_file(chat_file, export_file, format_type, sanitize=sanitize, verbose=verbose)
+                # Export the chat (pass workspace_dir for enrichment)
+                export_chat_to_file(
+                    chat_file, export_file, format_type,
+                    sanitize=sanitize, verbose=verbose,
+                    workspace_dir=workspace_dir
+                )
                 exported_files.append(export_file)
                 
             except Exception as e:
@@ -907,7 +997,12 @@ def export_single_chat(
             os.makedirs(output_dir, exist_ok=True)
 
         # Load chat data and determine source
-        chat_data, source = _load_chat_data(chat_file)
+        # For single chat export, infer workspace_dir from file location
+        workspace_dir = chat_file.parent
+        chat_data, source, errors = _load_chat_data(chat_file, workspace_dir=workspace_dir)
+        
+        # Log enrichment errors using standardized logging
+        _log_enrichment_errors(errors, chat_file.name)
 
         # Generate filename
         if format_type == 'book' and config.book_generate_titles:
