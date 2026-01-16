@@ -2,7 +2,7 @@
 
 A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat files with an intuitive interface and Unix `less`-like paging for smooth reading experience.
 
-**Version 2.2.0** - Enhanced book export with single-chat export, improved directory naming, and comprehensive filtering options.
+**Version 2.3.0** - Now with Kiro IDE support! Browse and export chats from both Claude Desktop and Kiro IDE.
 
 ## ✨ Features
 
@@ -613,13 +613,108 @@ Export entire projects to organized files:
 
 ## 📁 File Structure
 
+### Claude Desktop
 Claude Desktop stores projects in:
 - **Linux/macOS**: `~/.claude/projects/`
 - **Windows**: `%USERPROFILE%\.claude\projects\`
 
 Each project contains `.jsonl` files representing individual chats.
 
+### Kiro IDE
+Kiro IDE stores chat sessions in:
+- **Windows**: `%APPDATA%\Kiro\User\globalStorage\kiro.kiroagent\workspace-sessions\`
+- **macOS**: `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/workspace-sessions/`
+- **Linux**: `~/.config/Kiro/User/globalStorage/kiro.kiroagent/workspace-sessions/`
+
+Each workspace has a base64-encoded folder containing `sessions.json` and individual `.json` chat files.
+
+## 🔄 Kiro IDE Support (NEW!)
+
+Claude Chat Manager now supports Kiro IDE chat files alongside Claude Desktop, providing a unified interface for all your AI conversations.
+
+### Quick Start with Kiro
+
+```bash
+# List Kiro projects only
+python3 claude-chat-manager.py --source kiro
+
+# List both Claude Desktop and Kiro projects
+python3 claude-chat-manager.py --source all
+
+# Export a Kiro project
+python3 claude-chat-manager.py --source kiro "My Workspace" -f book -o exports/
+
+# Interactive browser with Kiro chats
+python3 claude-chat-manager.py --source kiro
+```
+
+### Source Selection
+
+Use the `--source` (or `-s`) flag to control which chat sources to display:
+
+| Flag | Description |
+|------|-------------|
+| `--source claude` | Claude Desktop only (default) |
+| `--source kiro` | Kiro IDE only |
+| `--source all` | Both sources combined |
+
+### Configuration
+
+Set the default source in your `.env` file:
+
+```bash
+# Default chat source (claude, kiro, or all)
+CHAT_SOURCE=claude
+
+# Custom Kiro data directory (optional)
+KIRO_DATA_DIR=/path/to/custom/kiro/data
+```
+
+### Kiro Data Directory Locations
+
+The tool auto-detects Kiro's data directory based on your OS:
+
+| OS | Default Location |
+|----|------------------|
+| Windows | `%APPDATA%\Kiro\User\globalStorage\kiro.kiroagent\` |
+| macOS | `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/` |
+| Linux | `~/.config/Kiro/User/globalStorage/kiro.kiroagent/` |
+
+### Features with Kiro
+
+All existing features work with Kiro chats:
+- ✅ Interactive browsing with source indicators `[Claude]` / `[Kiro]`
+- ✅ All export formats (pretty, markdown, book, wiki)
+- ✅ Content search across both sources
+- ✅ Batch export of workspaces
+- ✅ Sensitive data sanitization
+- ✅ Smart filtering of trivial chats
+
+### Kiro-Specific Handling
+
+- **Structured Content**: Kiro's array-based message content is automatically normalized
+- **Tool Blocks**: Tool use and results are formatted distinctly
+- **Image References**: Image blocks display as `[Image]` in text exports
+- **Session Titles**: Uses Kiro's session title or first user message for filenames
+
 ## 🛠️ What's New
+
+### v2.3.0 - Kiro IDE Support (January 2026)
+
+**New Features:**
+- 🔄 **Kiro IDE Support**: Browse and export Kiro IDE chat sessions alongside Claude Desktop
+- 🎯 **Source Selection**: `--source` flag to filter by claude, kiro, or all
+- 📁 **Unified Listing**: Combined project view with source indicators `[Claude]` / `[Kiro]`
+- 🔧 **Structured Content**: Automatic handling of Kiro's array-based message format
+- 🖼️ **Image Indicators**: `[Image]` markers for image references in exports
+- ⚙️ **Configuration**: `KIRO_DATA_DIR` and `CHAT_SOURCE` environment variables
+
+**Technical Details:**
+- New `kiro_parser.py` module for parsing Kiro `.chat` JSON files
+- New `kiro_projects.py` module for workspace and session discovery
+- Extended data models with `ChatSource` enum
+- Base64 workspace path decoding for human-readable names
+- Full integration with existing export, search, and sanitization features
 
 ### v2.2.0 - Single Chat Export & Directory Naming (November 2025)
 
@@ -904,22 +999,24 @@ This tool is provided as-is for personal use with Claude Desktop chat histories.
 
 ## 🎯 Project Stats
 
-- **Version**: 2.2.0
+- **Version**: 2.3.0
 - **Python**: 3.9+
-- **Modules**: 15 source modules
-- **Tests**: 73 unit tests (100% passing)
+- **Modules**: 17 source modules (including kiro_parser.py, kiro_projects.py)
+- **Tests**: 322 unit tests (100% passing)
 - **Coverage**: Core modules 52-100%
 - **Type Hints**: 100% coverage
 - **Documentation**: Complete with examples and enhancement guide
+- **Chat Sources**: Claude Desktop + Kiro IDE
 - **Features**: 5 export formats including:
   - Enhanced book mode with intelligent filtering
   - Single-chat export with action menu
   - Machine-hostname-based directory naming
   - AI-powered wiki with update/rebuild capabilities
   - Shared filtering architecture across modes
+  - Multi-source support (Claude Desktop + Kiro IDE)
 
 ---
 
 **Made with ❤️ for the Claude community**
 
-*Version 2.1 - Enhanced book mode with intelligent filtering!*
+*Version 2.3 - Now with Kiro IDE support!*

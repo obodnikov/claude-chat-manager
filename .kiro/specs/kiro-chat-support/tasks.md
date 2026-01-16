@@ -186,12 +186,12 @@ This implementation adds Kiro IDE chat support to Claude Chat Manager with maxim
 - [x] 13. Final checkpoint - Full test suite
   - All tests pass (322 passed, 3 skipped on Windows)
 
-- [ ] 14. Documentation updates
-  - [ ] 14.1 Update README.md with Kiro support
+- [x] 14. Documentation updates
+  - [x] 14.1 Update README.md with Kiro support
     - Document --source flag usage
     - Document KIRO_DATA_DIR configuration
     - Add examples for Kiro exports
-  - [ ] 14.2 Update ARCHITECTURE.md
+  - [x] 14.2 Update ARCHITECTURE.md
     - Add kiro_parser.py and kiro_projects.py to component list
     - Update data flow diagrams
 

@@ -51,19 +51,20 @@ This document serves as the **architectural source of truth** for Claude Chat Ma
     │ (cli.py)│            │(config) │
     └────┬────┘            └─────────┘
          │
-    ┌────┴────────────────────────────────┐
-    │                                     │
-┌───▼────┐  ┌────────┐  ┌────────┐  ┌───▼────┐
-│Projects│  │ Parser │  │Display │  │Exporters│
-└────┬───┘  └───┬────┘  └───┬────┘  └───┬────┘
-     │          │            │            │
-     └──────────┴────────────┴────────────┘
-                     │
-            ┌────────┴────────┐
-            │                 │
-       ┌────▼────┐      ┌────▼────┐
-       │Formatters│      │ Models  │
-       └─────────┘      └─────────┘
+    ┌────┴────────────────────────────────────────────────┐
+    │                                                     │
+┌───▼────┐  ┌────────┐  ┌────────┐  ┌────────┐  ┌───▼────┐
+│Projects│  │ Parser │  │  Kiro  │  │Display │  │Exporters│
+│        │  │(Claude)│  │ Parser │  │        │  │        │
+└────┬───┘  └───┬────┘  └───┬────┘  └───┬────┘  └───┬────┘
+     │          │            │            │            │
+     └──────────┴────────────┴────────────┴────────────┘
+                          │
+                 ┌────────┴────────┐
+                 │                 │
+            ┌────▼────┐      ┌────▼────┐
+            │Formatters│      │ Models  │
+            └─────────┘      └─────────┘
 ```
 
 ---
@@ -86,8 +87,10 @@ claude-chat-manager/
 │   ├── exporters.py            # Export formats (markdown, book, wiki) (~600 lines)
 │   ├── filters.py              # Chat filtering logic (trivial detection) (~200 lines)
 │   ├── formatters.py           # Message formatting, timestamp parsing (~230 lines)
+│   ├── kiro_parser.py          # Kiro IDE .chat file parsing (~200 lines)
+│   ├── kiro_projects.py        # Kiro workspace/session discovery (~250 lines)
 │   ├── llm_client.py           # OpenRouter API client (~150 lines)
-│   ├── models.py               # Data classes (ProjectInfo, ChatMessage) (~60 lines)
+│   ├── models.py               # Data classes (ProjectInfo, ChatMessage, ChatSource) (~100 lines)
 │   ├── parser.py               # JSONL file parsing (~90 lines)
 │   ├── projects.py             # Project discovery, search (~180 lines)
 │   ├── sanitizer.py            # Sensitive data detection/redaction (~500 lines)
@@ -99,7 +102,11 @@ claude-chat-manager/
 │   ├── test_config.py
 │   ├── test_exceptions.py
 │   ├── test_formatters.py
+│   ├── test_kiro_parser.py     # Kiro parser unit tests
+│   ├── test_kiro_projects.py   # Kiro projects unit tests
+│   ├── test_kiro_properties.py # Kiro property-based tests
 │   ├── test_llm_client.py
+│   ├── test_models.py          # Model tests including ChatSource
 │   ├── test_sanitizer.py
 │   ├── test_sanitize_chats.py
 │   ├── test_wiki_generator.py
@@ -127,7 +134,11 @@ claude-chat-manager/
 
 **Critical Paths:**
 - **Entry point:** `claude-chat-manager.py` → `src/cli.py`
-- **Data source:** `~/.claude/projects/*.jsonl` (configurable via `CLAUDE_PROJECTS_DIR`)
+- **Claude data source:** `~/.claude/projects/*.jsonl` (configurable via `CLAUDE_PROJECTS_DIR`)
+- **Kiro data source:** OS-specific Kiro directory (configurable via `KIRO_DATA_DIR`)
+  - Windows: `%APPDATA%\Kiro\User\globalStorage\kiro.kiroagent\workspace-sessions\`
+  - macOS: `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/workspace-sessions/`
+  - Linux: `~/.config/Kiro/User/globalStorage/kiro.kiroagent/workspace-sessions/`
 - **Config loading:** `.env` file in project root (loaded by `src/config.py`)
 - **Logs:** `logs/claude-chat-manager.log`
 
@@ -149,19 +160,42 @@ claude-chat-manager/
 - `browse_project_interactive()` - Project chat selection
 - `display_with_pager()` - Scrollable chat viewer
 
-### 4.2 Data Layer
+### 4.2 Data Layer (Claude Desktop)
 **Modules:** `parser.py`, `models.py`, `projects.py`
 
 **Responsibilities:**
 - JSONL file parsing and validation
 - Project discovery from filesystem
-- Data models (ProjectInfo, ChatMessage)
+- Data models (ProjectInfo, ChatMessage, ChatSource)
 - Message counting and metadata extraction
 
 **Key Functions:**
 - `parse_jsonl_file()` - Parse JSONL to Python dicts
 - `list_all_projects()` - Discover all Claude projects
 - `find_project_by_name()` - Fuzzy project search
+
+### 4.2.1 Data Layer (Kiro IDE)
+**Modules:** `kiro_parser.py`, `kiro_projects.py`
+
+**Responsibilities:**
+- Kiro `.chat` JSON file parsing
+- Workspace and session discovery
+- Base64 workspace path decoding
+- Structured content normalization (array → string)
+- Session metadata extraction from `sessions.json`
+
+**Key Classes:**
+- `KiroChatSession` - Parsed Kiro chat session data
+- `KiroWorkspace` - Workspace with sessions
+- `KiroSession` - Individual session metadata
+
+**Key Functions:**
+- `parse_kiro_chat_file()` - Parse Kiro .chat JSON files
+- `extract_kiro_messages()` - Extract ChatMessage objects from Kiro data
+- `normalize_kiro_content()` - Convert structured content to plain text
+- `discover_kiro_workspaces()` - Find all Kiro workspaces
+- `decode_workspace_path()` - Decode base64 workspace paths
+- `list_kiro_sessions()` - List sessions in a workspace
 
 ### 4.3 Export Engine
 **Modules:** `exporters.py`, `formatters.py`, `filters.py`
@@ -171,6 +205,7 @@ claude-chat-manager/
 - Content filtering (trivial chat detection, system tag removal)
 - Batch export to directories
 - Single-chat export with smart filenames
+- Source-aware exports (Claude Desktop and Kiro IDE)
 
 **Export Formats:**
 - **Pretty:** Terminal-friendly with colors and icons
@@ -207,10 +242,10 @@ claude-chat-manager/
 
 ## 5. Data Flow & Runtime Model
 
-### 5.1 Interactive Browser Flow
+### 5.1 Interactive Browser Flow (Multi-Source)
 
 ```
-User runs: python claude-chat-manager.py
+User runs: python claude-chat-manager.py --source all
                     │
                     ▼
          ┌──────────────────────┐
@@ -220,8 +255,26 @@ User runs: python claude-chat-manager.py
                     │
                     ▼
          ┌──────────────────────┐
-         │ Scan ~/.claude/      │
-         │ projects/ directory  │
+         │ Check --source flag  │
+         │ (claude/kiro/all)    │
+         └──────────┬───────────┘
+                    │
+        ┌───────────┴───────────┐
+        │                       │
+        ▼                       ▼
+┌───────────────┐      ┌───────────────┐
+│ Scan Claude   │      │ Scan Kiro     │
+│ ~/.claude/    │      │ workspace-    │
+│ projects/     │      │ sessions/     │
+└───────┬───────┘      └───────┬───────┘
+        │                       │
+        └───────────┬───────────┘
+                    │
+                    ▼
+         ┌──────────────────────┐
+         │ Merge & sort projects│
+         │ Add source indicators│
+         │ [Claude] / [Kiro]    │
          └──────────┬───────────┘
                     │
                     ▼
@@ -232,18 +285,33 @@ User runs: python claude-chat-manager.py
                     │
          User selects project
                     │
-                    ▼
-         ┌──────────────────────┐
-         │ List *.jsonl files   │
-         │ in project dir       │
-         └──────────┬───────────┘
+        ┌───────────┴───────────┐
+        │                       │
+        ▼                       ▼
+┌───────────────┐      ┌───────────────┐
+│ Claude:       │      │ Kiro:         │
+│ List *.jsonl  │      │ List sessions │
+│ files         │      │ from JSON     │
+└───────┬───────┘      └───────┬───────┘
+        │                       │
+        └───────────┬───────────┘
                     │
          User selects chat
                     │
+        ┌───────────┴───────────┐
+        │                       │
+        ▼                       ▼
+┌───────────────┐      ┌───────────────┐
+│ Parse JSONL   │      │ Parse .chat   │
+│ (Claude)      │      │ JSON (Kiro)   │
+└───────┬───────┘      └───────┬───────┘
+        │                       │
+        └───────────┬───────────┘
+                    │
                     ▼
          ┌──────────────────────┐
-         │ Parse JSONL file     │
-         │ Extract messages     │
+         │ Normalize content    │
+         │ (Kiro: array→string) │
          └──────────┬───────────┘
                     │
                     ▼
@@ -261,18 +329,21 @@ User runs: python claude-chat-manager.py "Project" -f book -o exports/
                     ▼
          ┌──────────────────────┐
          │ Find project by name │
+         │ (check both sources) │
          └──────────┬───────────┘
                     │
                     ▼
          ┌──────────────────────┐
-         │ Get all *.jsonl files│
+         │ Get chat files       │
+         │ (*.jsonl or *.json)  │
          └──────────┬───────────┘
                     │
          For each chat file:
                     │
                     ▼
          ┌──────────────────────┐
-         │ Parse JSONL          │
+         │ Parse file           │
+         │ (JSONL or Kiro JSON) │
          └──────────┬───────────┘
                     │
                     ▼
@@ -332,6 +403,10 @@ WIKI_GENERATE_TITLES = os.getenv('WIKI_GENERATE_TITLES') or true
 - `CLAUDE_DEFAULT_FORMAT` - Default export format
 - `CLAUDE_PAGE_HEIGHT` - Terminal page height
 
+**Kiro IDE Settings:**
+- `KIRO_DATA_DIR` - Custom Kiro data directory (OS-specific default)
+- `CHAT_SOURCE` - Default source filter (claude, kiro, all)
+
 **LLM Integration:**
 - `OPENROUTER_API_KEY` - API key for title generation
 - `OPENROUTER_MODEL` - Model to use (default: `anthropic/claude-haiku-4.5`)
@@ -363,10 +438,12 @@ WIKI_GENERATE_TITLES = os.getenv('WIKI_GENERATE_TITLES') or true
 - **Platform:** Cross-platform (Windows, macOS, Linux)
 - **Python:** 3.9+ required
 - **Dependencies:** Minimal (standard library only for core functionality)
-- **Data Location:** `~/.claude/projects/` (Claude Desktop default)
+- **Claude Data Location:** `~/.claude/projects/` (Claude Desktop default)
+- **Kiro Data Location:** OS-specific (see Critical Paths section)
 - **Executable:** Can be built with PyInstaller (see `docs/BUILDING.md`)
 
 ---
+
 
 ## 7. Stability Zones
 
@@ -376,6 +453,10 @@ WIKI_GENERATE_TITLES = os.getenv('WIKI_GENERATE_TITLES') or true
 - `parser.py` - JSONL parsing (well-tested, stable format)
 - `models.py` - Data classes (simple, unlikely to change)
 - `projects.py` - Project discovery (stable filesystem operations)
+
+**Kiro Data Layer:**
+- `kiro_parser.py` - Kiro JSON parsing (well-tested, stable format)
+- `kiro_projects.py` - Workspace discovery (stable filesystem operations)
 
 **Formatting:**
 - `formatters.py` - Message formatting (mature, well-tested)
@@ -575,6 +656,17 @@ c) Refactor existing code to make room?"
 **"What was the refactoring history?"**
 → See `docs/chats/refactoring-monolithic-python-script-into-production-ready-codebase-2025-11-04.md`
 
+**"How does Kiro IDE support work?"**
+→ See `src/kiro_parser.py` (parsing), `src/kiro_projects.py` (discovery), and README.md (usage)
+
+**"How do I add support for a new chat source?"**
+→ Study `src/kiro_parser.py` and `src/kiro_projects.py` as examples, then:
+1. Create parser module for the new format
+2. Create projects module for discovery
+3. Add source to `ChatSource` enum in `src/models.py`
+4. Update `src/config.py` with new settings
+5. Wire into `src/projects.py` for unified listing
+
 ### Common Modification Patterns
 
 **Adding a new configuration option:**
@@ -596,9 +688,20 @@ c) Refactor existing code to make room?"
 3. Add tests in `tests/test_sanitizer.py`
 4. Document in `docs/SANITIZATION.md`
 
+**Adding a new chat source (like Kiro):**
+1. Create `src/{source}_parser.py` with parsing functions
+2. Create `src/{source}_projects.py` with discovery functions
+3. Add source value to `ChatSource` enum in `src/models.py`
+4. Add configuration properties to `src/config.py`
+5. Update `src/projects.py` to include new source in unified listing
+6. Add `--source` flag option in `claude-chat-manager.py`
+7. Add tests in `tests/test_{source}_*.py`
+8. Document in README.md and ARCHITECTURE.md
+
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** 2025-01-15  
-**Total Lines:** ~290  
-**Status:** ✅ Complete
+
+**Document Version:** 1.1  
+**Last Updated:** 2026-01-15  
+**Total Lines:** ~400  
+**Status:** ✅ Complete (Updated with Kiro IDE support)
