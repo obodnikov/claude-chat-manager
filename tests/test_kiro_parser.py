@@ -1182,13 +1182,18 @@ class TestBuildFullSessionFromExecutions:
         assert "Python is a high-level programming language" in messages[1].content
 
     def test_build_full_session_multiple_executions(self, tmp_path):
-        """Test building full session from multiple execution logs."""
+        """Test building full session from multiple execution logs.
+        
+        In real Kiro, each execution's messagesFromExecutionId contains the
+        CUMULATIVE conversation up to that point. So the last execution has
+        everything. This test simulates that behavior.
+        """
         # Create execution log directory structure
         hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
         subdir = hash_dir / "74abcdef"
         subdir.mkdir(parents=True)
         
-        # Create first execution log
+        # Create first execution log (only first exchange)
         log_file1 = subdir / "exec-001"
         log_file1.write_text(json.dumps({
             "executionId": "exec-001",
@@ -1198,11 +1203,13 @@ class TestBuildFullSessionFromExecutions:
             ]
         }))
         
-        # Create second execution log
+        # Create second execution log (CUMULATIVE - contains both exchanges)
         log_file2 = subdir / "exec-002"
         log_file2.write_text(json.dumps({
             "executionId": "exec-002",
             "messagesFromExecutionId": [
+                {"role": "human", "entries": [{"type": "text", "text": "First question"}]},
+                {"role": "bot", "entries": [{"type": "text", "text": "First answer"}]},
                 {"role": "human", "entries": [{"type": "text", "text": "Second question"}]},
                 {"role": "bot", "entries": [{"type": "text", "text": "Second answer"}]}
             ]
@@ -1221,7 +1228,7 @@ class TestBuildFullSessionFromExecutions:
         
         messages, errors = build_full_session_from_executions(session_data, tmp_path)
         
-        # Should have 4 messages (2 from each execution)
+        # Should have 4 messages from the last execution (which has cumulative history)
         assert len(messages) == 4
         assert messages[0].content == "First question"
         assert messages[1].content == "First answer"
@@ -1259,30 +1266,32 @@ class TestBuildFullSessionFromExecutions:
         # Should have error about not finding execution log
         assert any("not found" in e.lower() for e in errors)
 
-    def test_deduplicates_user_messages(self, tmp_path):
-        """Test that duplicate user messages are deduplicated."""
+    def test_fallback_to_earlier_execution_when_last_empty(self, tmp_path):
+        """Test fallback to earlier execution when last has no messages.
+        
+        This tests the fallback behavior when the last execution log has
+        empty messagesFromExecutionId.
+        """
         # Create execution log directory structure
         hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
         subdir = hash_dir / "74abcdef"
         subdir.mkdir(parents=True)
         
-        # Create execution logs with same user message
+        # Create first execution log with content
         log_file1 = subdir / "exec-001"
         log_file1.write_text(json.dumps({
             "executionId": "exec-001",
             "messagesFromExecutionId": [
-                {"role": "human", "entries": [{"type": "text", "text": "Same question"}]},
-                {"role": "bot", "entries": [{"type": "text", "text": "First answer"}]}
+                {"role": "human", "entries": [{"type": "text", "text": "A question"}]},
+                {"role": "bot", "entries": [{"type": "text", "text": "An answer"}]}
             ]
         }))
         
+        # Create second execution log with empty messages
         log_file2 = subdir / "exec-002"
         log_file2.write_text(json.dumps({
             "executionId": "exec-002",
-            "messagesFromExecutionId": [
-                {"role": "human", "entries": [{"type": "text", "text": "Same question"}]},
-                {"role": "bot", "entries": [{"type": "text", "text": "Second answer"}]}
-            ]
+            "messagesFromExecutionId": []
         }))
         
         session_data = {
@@ -1295,6 +1304,7 @@ class TestBuildFullSessionFromExecutions:
         
         messages, errors = build_full_session_from_executions(session_data, tmp_path)
         
-        # Should deduplicate the user message
-        user_messages = [m for m in messages if m.role == "user"]
-        assert len(user_messages) == 1
+        # Should fall back to exec-001 which has content
+        assert len(messages) == 2
+        assert messages[0].content == "A question"
+        assert messages[1].content == "An answer"

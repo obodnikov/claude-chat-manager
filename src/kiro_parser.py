@@ -896,14 +896,18 @@ def build_full_session_from_executions(
     execution_log_index: Optional[Dict[str, Path]] = None,
     include_tool_details: bool = False
 ) -> Tuple[List[ChatMessage], List[str]]:
-    """Build complete conversation by chaining execution logs.
+    """Build complete conversation from the last execution log.
     
     This is the main function for wiki/book exports. It:
     1. Extracts executionIds from session history
-    2. For each executionId, loads the execution log
-    3. Extracts messagesFromExecutionId (full conversation)
-    4. Chains all messages in order
-    5. Returns the complete conversation (skips session history)
+    2. Uses ONLY the last executionId (which contains the complete conversation)
+    3. Extracts messagesFromExecutionId from that execution log
+    4. Returns the complete conversation
+    
+    Note: Each execution log's messagesFromExecutionId contains the CUMULATIVE
+    conversation up to that point. So the last execution has everything.
+    Using only the last execution avoids duplicate messages that would occur
+    from chaining all executions together.
     
     Args:
         session_data: Parsed session JSON data
@@ -929,9 +933,14 @@ def build_full_session_from_executions(
     
     logger.debug(f"Found {len(execution_ids)} execution IDs in session")
     
-    # Load messages from execution logs
+    # Use only the LAST execution ID - it contains the complete conversation
+    # Each execution's messagesFromExecutionId is cumulative, so the last one has everything
+    last_execution_id = execution_ids[-1]
+    logger.debug(f"Using last execution ID: {last_execution_id}")
+    
+    # Load messages from the last execution log only
     all_messages, load_errors = _load_execution_logs_for_session(
-        execution_ids,
+        [last_execution_id],
         kiro_data_dir,
         execution_log_index,
         include_tool_details
@@ -939,17 +948,28 @@ def build_full_session_from_executions(
     errors.extend(load_errors)
     
     if not all_messages:
-        errors.append("No messages extracted from execution logs")
-        return _fallback_to_session_history(session_data, errors)
+        # If last execution failed, try falling back to earlier executions
+        logger.warning(f"Last execution {last_execution_id} had no messages, trying earlier executions")
+        for exec_id in reversed(execution_ids[:-1]):
+            all_messages, load_errors = _load_execution_logs_for_session(
+                [exec_id],
+                kiro_data_dir,
+                execution_log_index,
+                include_tool_details
+            )
+            if all_messages:
+                logger.info(f"Found messages in execution {exec_id}")
+                break
+        
+        if not all_messages:
+            errors.append("No messages extracted from any execution logs")
+            return _fallback_to_session_history(session_data, errors)
     
-    # Deduplicate user messages
-    deduplicated_messages = _deduplicate_user_messages(all_messages)
-    
-    # Convert to ChatMessage objects
+    # Convert to ChatMessage objects (no deduplication needed - single execution)
     session_id = session_data.get('sessionId', '')
-    chat_messages = _convert_to_chat_messages(deduplicated_messages, session_id)
+    chat_messages = _convert_to_chat_messages(all_messages, session_id)
     
-    logger.info(f"Built full session with {len(chat_messages)} messages from {len(execution_ids)} executions")
+    logger.info(f"Built full session with {len(chat_messages)} messages from execution {last_execution_id}")
     return chat_messages, errors
 
 
