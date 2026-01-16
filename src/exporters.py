@@ -1050,6 +1050,14 @@ def _generate_book_filename(
     # Append date if available and configured
     if config.book_include_date:
         chat_date = _extract_chat_date_simple(chat_data)
+        # Fallback to file modification time for Kiro (no per-message timestamps)
+        if not chat_date:
+            try:
+                from datetime import datetime
+                mtime = chat_file.stat().st_mtime
+                chat_date = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
+            except Exception:
+                pass
         if chat_date:
             sanitized = f"{sanitized}-{chat_date}"
 
