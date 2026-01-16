@@ -710,7 +710,16 @@ def extract_messages_from_execution_log(
     execution_log: Dict[str, Any],
     include_tool_details: bool = False
 ) -> List[Dict[str, Any]]:
-    """Extract the complete conversation from an execution log's messagesFromExecutionId.
+    """Extract the complete conversation from an execution log.
+    
+    Kiro stores messages in multiple locations within execution logs:
+    1. context.messages - Most complete, includes all messages up to current execution
+    2. input.data.messagesFromExecutionId - Input messages for this execution
+    3. messagesFromExecutionId (top-level) - Sometimes present
+    
+    This function checks all locations and uses the most complete source.
+    It also filters out system messages (identity prompts, etc.) that shouldn't
+    be included in exports.
     
     Args:
         execution_log: Parsed execution log JSON
@@ -720,12 +729,21 @@ def extract_messages_from_execution_log(
         List of message dicts with role, content, and optionally tool_calls
     """
     messages = []
-    raw_messages = execution_log.get('messagesFromExecutionId', [])
     
-    # Also check input.data.messagesFromExecutionId as fallback
-    if not raw_messages:
-        input_data = execution_log.get('input', {}).get('data', {})
-        raw_messages = input_data.get('messagesFromExecutionId', [])
+    # Check multiple locations for messages, prefer the most complete source
+    # context.messages typically has the most complete conversation
+    context_messages = execution_log.get('context', {}).get('messages', [])
+    input_messages = execution_log.get('input', {}).get('data', {}).get('messagesFromExecutionId', [])
+    top_level_messages = execution_log.get('messagesFromExecutionId', [])
+    
+    # Use the source with the most messages (most complete conversation)
+    raw_messages = context_messages
+    if len(input_messages) > len(raw_messages):
+        raw_messages = input_messages
+    if len(top_level_messages) > len(raw_messages):
+        raw_messages = top_level_messages
+    
+    logger.debug(f"Message sources: context={len(context_messages)}, input={len(input_messages)}, top={len(top_level_messages)}, using={len(raw_messages)}")
     
     for msg in raw_messages:
         role = msg.get('role', '')
@@ -739,6 +757,9 @@ def extract_messages_from_execution_log(
         text_parts = []
         tool_calls = []
         
+        # Check if this is a system/identity message (should be skipped)
+        is_system_message = False
+        
         for entry in entries:
             entry_type = entry.get('type', '')
             
@@ -748,6 +769,14 @@ def extract_messages_from_execution_log(
                     # Skip environment context blocks
                     if '<EnvironmentContext>' in text:
                         continue
+                    # Check for system/identity messages that should be skipped entirely
+                    if text.strip().startswith('<identity>'):
+                        is_system_message = True
+                        break
+                    # Skip system summarization requests
+                    if '[SYSTEM NOTE:' in text:
+                        is_system_message = True
+                        break
                     text_parts.append(text)
             
             elif entry_type == 'toolUse':
@@ -769,6 +798,10 @@ def extract_messages_from_execution_log(
             elif entry_type == 'document':
                 # Skip document entries (file trees, etc.)
                 continue
+        
+        # Skip system/identity messages entirely
+        if is_system_message:
+            continue
         
         # Only add message if it has content
         content = '\n'.join(text_parts).strip()

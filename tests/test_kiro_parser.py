@@ -1143,6 +1143,100 @@ class TestExtractMessagesFromExecutionLog:
         assert len(result) == 1
         assert result[0]["content"] == "Fallback test"
 
+    def test_prefer_context_messages_when_more_complete(self):
+        """Test that context.messages is used when it has more messages.
+        
+        Kiro stores messages in multiple locations. context.messages often
+        has the most complete conversation, especially for multi-turn sessions.
+        """
+        execution_log = {
+            # input.data.messagesFromExecutionId has fewer messages (incomplete)
+            "input": {
+                "data": {
+                    "messagesFromExecutionId": [
+                        {"role": "human", "entries": [{"type": "text", "text": "First question"}]},
+                        {"role": "bot", "entries": [{"type": "text", "text": "First answer"}]}
+                    ]
+                }
+            },
+            # context.messages has more messages (complete conversation)
+            "context": {
+                "messages": [
+                    {"role": "human", "entries": [{"type": "text", "text": "First question"}]},
+                    {"role": "bot", "entries": [{"type": "text", "text": "First answer"}]},
+                    {"role": "human", "entries": [{"type": "text", "text": "Second question"}]},
+                    {"role": "bot", "entries": [{"type": "text", "text": "Second answer with table"}]}
+                ]
+            }
+        }
+        
+        result = extract_messages_from_execution_log(execution_log)
+        
+        # Should use context.messages since it has more messages
+        assert len(result) == 4
+        assert result[0]["content"] == "First question"
+        assert result[3]["content"] == "Second answer with table"
+
+    def test_use_input_data_when_context_empty(self):
+        """Test that input.data is used when context.messages is empty."""
+        execution_log = {
+            "input": {
+                "data": {
+                    "messagesFromExecutionId": [
+                        {"role": "human", "entries": [{"type": "text", "text": "Only in input"}]}
+                    ]
+                }
+            },
+            "context": {
+                "messages": []
+            }
+        }
+        
+        result = extract_messages_from_execution_log(execution_log)
+        
+        assert len(result) == 1
+        assert result[0]["content"] == "Only in input"
+
+    def test_skip_identity_system_messages(self):
+        """Test that <identity> system messages are filtered out."""
+        execution_log = {
+            "context": {
+                "messages": [
+                    {"role": "human", "entries": [{"type": "text", "text": "<identity>You are Kiro...</identity>"}]},
+                    {"role": "bot", "entries": [{"type": "text", "text": "I will follow these instructions."}]},
+                    {"role": "human", "entries": [{"type": "text", "text": "What is Python?"}]},
+                    {"role": "bot", "entries": [{"type": "text", "text": "Python is a programming language."}]}
+                ]
+            }
+        }
+        
+        result = extract_messages_from_execution_log(execution_log)
+        
+        # Should skip the identity message, keep the rest
+        assert len(result) == 3
+        assert result[0]["content"] == "I will follow these instructions."
+        assert result[1]["content"] == "What is Python?"
+        assert result[2]["content"] == "Python is a programming language."
+
+    def test_skip_system_note_messages(self):
+        """Test that [SYSTEM NOTE:] messages are filtered out."""
+        execution_log = {
+            "context": {
+                "messages": [
+                    {"role": "human", "entries": [{"type": "text", "text": "What is Python?"}]},
+                    {"role": "bot", "entries": [{"type": "text", "text": "Python is a programming language."}]},
+                    {"role": "human", "entries": [{"type": "text", "text": "[SYSTEM NOTE: Context limit reached]"}]}
+                ]
+            }
+        }
+        
+        result = extract_messages_from_execution_log(execution_log)
+        
+        # Should skip the system note message
+        assert len(result) == 2
+        assert result[0]["content"] == "What is Python?"
+        assert result[1]["content"] == "Python is a programming language."
+
 
 class TestBuildFullSessionFromExecutions:
     """Tests for build_full_session_from_executions function."""
