@@ -1,20 +1,31 @@
 """Kiro IDE chat file parsing utilities.
 
-This module handles parsing of Kiro's JSON .chat files and
-extracting message data, including enrichment from execution logs.
+This module handles parsing of Kiro's JSON session files and
+extracting message data from execution logs.
 
 Kiro stores chat data in two locations:
-1. `.chat` files - contain brief bot acknowledgments like "On it."
-2. Execution log files - contain full bot responses in `messagesFromExecutionId`
+1. Session files (workspace-sessions/<encoded-path>/<session-id>.json):
+   - Contains `history` array with user messages (full) and assistant ("On it.")
+   - Each assistant message has an `executionId` pointing to execution logs
+   - This is essentially an index/summary - skip for wiki/book exports
+
+2. Execution log files (<hash-dir>/<hash-subdir>/<execution-id>):
+   - Located at kiro.kiroagent level, NOT inside workspace-sessions
+   - Contains `messagesFromExecutionId` with FULL conversation:
+     - human: user messages with context
+     - bot: full assistant responses with tool calls
+     - tool: tool responses
+   - This is the source of truth for full conversations
 
 This module provides functions to:
-- Parse .chat files
-- Find and parse execution log files
-- Enrich bot messages with full responses from execution logs
+- Parse session files to extract executionIds
+- Find and parse execution log files from hash-named directories
+- Build full conversations by chaining execution logs
 """
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -23,6 +34,15 @@ from .exceptions import ChatFileNotFoundError, InvalidChatFileError
 from .models import ChatMessage, ChatSource
 
 logger = logging.getLogger(__name__)
+
+# Directories to skip when searching for execution logs
+SKIP_DIRS = {
+    'workspace-sessions', '.diffs', '.migrations', '.utils', 
+    'default', 'dev_data', 'index'
+}
+
+# Pattern for hash-named directories (32 hex characters)
+HASH_DIR_PATTERN = re.compile(r'^[a-f0-9]{32}$')
 
 
 @dataclass
@@ -203,70 +223,94 @@ def extract_kiro_messages(chat_data: Dict[str, Any]) -> List[ChatMessage]:
     return messages
 
 
-def find_execution_log_dirs(workspace_dir: Path) -> List[Path]:
-    """Find all execution log directories within a workspace.
+def find_execution_log_dirs(kiro_data_dir: Path) -> List[Path]:
+    """Find all execution log directories within Kiro data directory.
     
-    Execution logs are stored in hash-named subdirectories within the workspace.
-    These directories contain files without extensions that hold the full
-    conversation data including complete bot responses.
+    Execution logs are stored in hash-named subdirectories at the kiro.kiroagent level,
+    NOT inside workspace-sessions. Structure:
+    
+    kiro.kiroagent/
+    ├── workspace-sessions/     (session files - skip)
+    ├── .diffs/, .utils/, etc.  (internal dirs - skip)
+    └── <32-char-hash>/         (execution log directories)
+        └── <hash-subdir>/
+            └── <execution-id>  (no extension, JSON content)
     
     Args:
-        workspace_dir: Path to the workspace directory (contains .chat files)
+        kiro_data_dir: Path to kiro.kiroagent directory
         
     Returns:
-        List of paths to execution log directories
+        List of paths to directories containing execution log files
     """
     execution_dirs = []
     
-    if not workspace_dir.exists():
+    if not kiro_data_dir.exists():
         return execution_dirs
     
-    for item in workspace_dir.iterdir():
-        if item.is_dir():
-            # Check if this looks like an execution log directory
-            # (contains files without extensions that are JSON)
-            has_execution_logs = False
-            for subitem in item.iterdir():
-                if subitem.is_file() and not subitem.suffix:
-                    # File without extension - likely an execution log
-                    has_execution_logs = True
-                    break
-            
-            if has_execution_logs:
-                execution_dirs.append(item)
+    for item in kiro_data_dir.iterdir():
+        if not item.is_dir():
+            continue
+        
+        # Skip known non-execution directories
+        if item.name in SKIP_DIRS:
+            continue
+        
+        # Check if this looks like a hash-named directory
+        if not HASH_DIR_PATTERN.match(item.name):
+            continue
+        
+        # This is a hash-named directory - scan its subdirectories
+        for subdir in item.iterdir():
+            if subdir.is_dir():
+                # Check if subdirectory contains files without extensions (execution logs)
+                has_execution_logs = False
+                try:
+                    for subitem in subdir.iterdir():
+                        if subitem.is_file() and not subitem.suffix:
+                            has_execution_logs = True
+                            break
+                except PermissionError:
+                    continue
+                
+                if has_execution_logs:
+                    execution_dirs.append(subdir)
     
     return execution_dirs
 
 
-def build_execution_log_index(workspace_dir: Path) -> Dict[str, Path]:
+def build_execution_log_index(kiro_data_dir: Path) -> Dict[str, Path]:
     """Build an index mapping execution IDs to their log file paths.
     
-    Scans all execution log directories in the workspace and creates
+    Scans all execution log directories in the Kiro data directory and creates
     a mapping from executionId to the file path containing that execution's data.
     
     Args:
-        workspace_dir: Path to the workspace directory
+        kiro_data_dir: Path to kiro.kiroagent directory
         
     Returns:
         Dictionary mapping executionId strings to file paths
     """
     index = {}
-    execution_dirs = find_execution_log_dirs(workspace_dir)
+    execution_dirs = find_execution_log_dirs(kiro_data_dir)
     
     for exec_dir in execution_dirs:
-        for log_file in exec_dir.iterdir():
-            if log_file.is_file() and not log_file.suffix:
-                try:
-                    with open(log_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    
-                    exec_id = data.get('executionId')
-                    if exec_id:
-                        index[exec_id] = log_file
-                except (json.JSONDecodeError, IOError, KeyError):
-                    # Skip files that can't be parsed
-                    continue
+        try:
+            for log_file in exec_dir.iterdir():
+                if log_file.is_file() and not log_file.suffix:
+                    try:
+                        with open(log_file, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        
+                        exec_id = data.get('executionId')
+                        if exec_id:
+                            index[exec_id] = log_file
+                    except (json.JSONDecodeError, IOError, KeyError):
+                        # Skip files that can't be parsed
+                        continue
+        except PermissionError:
+            continue
     
+    logger.debug(f"Built execution log index with {len(index)} entries")
     return index
 
 
@@ -335,16 +379,16 @@ def extract_bot_responses_from_execution_log(execution_log: Dict[str, Any]) -> L
     return responses
 
 
-def find_execution_log_for_chat(
-    workspace_dir: Path,
+def find_execution_log_for_id(
+    kiro_data_dir: Path,
     execution_id: str,
     execution_log_index: Optional[Dict[str, Path]] = None
 ) -> Optional[Path]:
     """Find the execution log file for a given execution ID.
     
     Args:
-        workspace_dir: Path to the workspace directory
-        execution_id: The executionId from the .chat file
+        kiro_data_dir: Path to kiro.kiroagent directory
+        execution_id: The executionId to find
         execution_log_index: Optional pre-built index for faster lookups
         
     Returns:
@@ -358,19 +402,22 @@ def find_execution_log_for_chat(
         return execution_log_index[execution_id]
     
     # Otherwise, search through execution log directories
-    execution_dirs = find_execution_log_dirs(workspace_dir)
+    execution_dirs = find_execution_log_dirs(kiro_data_dir)
     
     for exec_dir in execution_dirs:
-        for log_file in exec_dir.iterdir():
-            if log_file.is_file() and not log_file.suffix:
-                try:
-                    with open(log_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    
-                    if data.get('executionId') == execution_id:
-                        return log_file
-                except (json.JSONDecodeError, IOError):
-                    continue
+        try:
+            for log_file in exec_dir.iterdir():
+                if log_file.is_file() and not log_file.suffix:
+                    try:
+                        with open(log_file, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        
+                        if data.get('executionId') == execution_id:
+                            return log_file
+                    except (json.JSONDecodeError, IOError):
+                        continue
+        except PermissionError:
+            continue
     
     return None
 
@@ -413,7 +460,7 @@ def enrich_chat_with_execution_log(
         return chat_data, errors
     
     # Find the execution log
-    log_path = find_execution_log_for_chat(workspace_dir, execution_id, execution_log_index)
+    log_path = find_execution_log_for_id(workspace_dir, execution_id, execution_log_index)
     
     if not log_path:
         errors.append(f"Execution log not found for executionId: {execution_id}")
@@ -632,6 +679,320 @@ def extract_kiro_messages_enriched(
             source=ChatSource.KIRO_IDE,
             execution_id=execution_id,
             context_items=context if context else None
+        )
+        messages.append(chat_msg)
+    
+    return messages, errors
+
+
+def extract_execution_ids_from_session(session_data: Dict[str, Any]) -> List[str]:
+    """Extract all executionIds from a session's history.
+    
+    Args:
+        session_data: Parsed session JSON data
+        
+    Returns:
+        List of executionIds in order of appearance
+    """
+    execution_ids = []
+    history = session_data.get('history', [])
+    
+    for entry in history:
+        # executionId is stored at the entry level for assistant messages
+        exec_id = entry.get('executionId')
+        if exec_id and exec_id not in execution_ids:
+            execution_ids.append(exec_id)
+    
+    return execution_ids
+
+
+def extract_messages_from_execution_log(
+    execution_log: Dict[str, Any],
+    include_tool_details: bool = False
+) -> List[Dict[str, Any]]:
+    """Extract the complete conversation from an execution log's messagesFromExecutionId.
+    
+    Args:
+        execution_log: Parsed execution log JSON
+        include_tool_details: If True, include tool call/response details
+        
+    Returns:
+        List of message dicts with role, content, and optionally tool_calls
+    """
+    messages = []
+    raw_messages = execution_log.get('messagesFromExecutionId', [])
+    
+    # Also check input.data.messagesFromExecutionId as fallback
+    if not raw_messages:
+        input_data = execution_log.get('input', {}).get('data', {})
+        raw_messages = input_data.get('messagesFromExecutionId', [])
+    
+    for msg in raw_messages:
+        role = msg.get('role', '')
+        entries = msg.get('entries', [])
+        
+        # Skip tool responses unless explicitly requested
+        if role == 'tool' and not include_tool_details:
+            continue
+        
+        # Process entries to extract content
+        text_parts = []
+        tool_calls = []
+        
+        for entry in entries:
+            entry_type = entry.get('type', '')
+            
+            if entry_type == 'text':
+                text = entry.get('text', '')
+                if text:
+                    # Skip environment context blocks
+                    if '<EnvironmentContext>' in text:
+                        continue
+                    text_parts.append(text)
+            
+            elif entry_type == 'toolUse':
+                tool_name = entry.get('name', 'unknown')
+                tool_calls.append({
+                    'name': tool_name,
+                    'id': entry.get('id', ''),
+                    'args': entry.get('args', {})
+                })
+                if include_tool_details:
+                    text_parts.append(f"[Tool: {tool_name}]")
+            
+            elif entry_type == 'toolUseResponse' and include_tool_details:
+                tool_name = entry.get('name', 'unknown')
+                success = entry.get('success', False)
+                status = "✓" if success else "✗"
+                text_parts.append(f"[Tool Response: {tool_name} {status}]")
+            
+            elif entry_type == 'document':
+                # Skip document entries (file trees, etc.)
+                continue
+        
+        # Only add message if it has content
+        content = '\n'.join(text_parts).strip()
+        if content:
+            message = {
+                'role': role,
+                'content': content
+            }
+            if tool_calls and include_tool_details:
+                message['tool_calls'] = tool_calls
+            messages.append(message)
+    
+    return messages
+
+
+def _load_execution_logs_for_session(
+    execution_ids: List[str],
+    kiro_data_dir: Path,
+    execution_log_index: Dict[str, Path],
+    include_tool_details: bool = False
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Load and extract messages from execution logs for given IDs.
+    
+    Args:
+        execution_ids: List of executionIds to load
+        kiro_data_dir: Path to kiro.kiroagent directory
+        execution_log_index: Pre-built index mapping executionId to file path
+        include_tool_details: If True, include tool call indicators
+        
+    Returns:
+        Tuple of (all_messages, errors) where all_messages is a list of message dicts
+    """
+    errors = []
+    all_messages = []
+    
+    for exec_id in execution_ids:
+        # Find execution log
+        log_path = find_execution_log_for_id(kiro_data_dir, exec_id, execution_log_index)
+        
+        if not log_path:
+            errors.append(f"Execution log not found for executionId: {exec_id}")
+            continue
+        
+        # Parse execution log
+        execution_log = parse_execution_log(log_path)
+        if not execution_log:
+            errors.append(f"Failed to parse execution log: {log_path}")
+            continue
+        
+        # Extract messages from this execution
+        exec_messages = extract_messages_from_execution_log(
+            execution_log, 
+            include_tool_details=include_tool_details
+        )
+        all_messages.extend(exec_messages)
+    
+    return all_messages, errors
+
+
+def _deduplicate_user_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Remove duplicate user messages that appear across multiple executions.
+    
+    Args:
+        messages: List of message dicts with 'role' and 'content' keys
+        
+    Returns:
+        Deduplicated list of messages
+    """
+    seen_user_messages = set()
+    deduplicated = []
+    
+    for msg in messages:
+        if msg['role'] == 'human':
+            # Create a hash of the content to detect duplicates
+            content_hash = hash(msg['content'][:200])  # First 200 chars
+            if content_hash in seen_user_messages:
+                continue
+            seen_user_messages.add(content_hash)
+        
+        deduplicated.append(msg)
+    
+    return deduplicated
+
+
+def _convert_to_chat_messages(
+    messages: List[Dict[str, Any]],
+    session_id: str
+) -> List[ChatMessage]:
+    """Convert raw message dicts to ChatMessage objects.
+    
+    Args:
+        messages: List of message dicts with 'role' and 'content' keys
+        session_id: Session ID to attach to messages
+        
+    Returns:
+        List of ChatMessage objects
+    """
+    chat_messages = []
+    
+    for msg in messages:
+        # Normalize role names
+        role = msg['role']
+        if role == 'human':
+            role = 'user'
+        elif role == 'bot':
+            role = 'assistant'
+        
+        chat_msg = ChatMessage(
+            role=role,
+            content=msg['content'],
+            timestamp=None,
+            tool_result=None,
+            source=ChatSource.KIRO_IDE,
+            execution_id=session_id,
+            context_items=None
+        )
+        chat_messages.append(chat_msg)
+    
+    return chat_messages
+
+
+def build_full_session_from_executions(
+    session_data: Dict[str, Any],
+    kiro_data_dir: Path,
+    execution_log_index: Optional[Dict[str, Path]] = None,
+    include_tool_details: bool = False
+) -> Tuple[List[ChatMessage], List[str]]:
+    """Build complete conversation by chaining execution logs.
+    
+    This is the main function for wiki/book exports. It:
+    1. Extracts executionIds from session history
+    2. For each executionId, loads the execution log
+    3. Extracts messagesFromExecutionId (full conversation)
+    4. Chains all messages in order
+    5. Returns the complete conversation (skips session history)
+    
+    Args:
+        session_data: Parsed session JSON data
+        kiro_data_dir: Path to kiro.kiroagent directory
+        execution_log_index: Optional pre-built index for faster lookups
+        include_tool_details: If True, include tool call indicators
+        
+    Returns:
+        Tuple of (messages, errors) where messages is the full conversation
+    """
+    errors = []
+    
+    # Build index if not provided
+    if execution_log_index is None:
+        execution_log_index = build_execution_log_index(kiro_data_dir)
+    
+    # Extract executionIds from session
+    execution_ids = extract_execution_ids_from_session(session_data)
+    
+    if not execution_ids:
+        errors.append("No executionIds found in session history")
+        return _fallback_to_session_history(session_data, errors)
+    
+    logger.debug(f"Found {len(execution_ids)} execution IDs in session")
+    
+    # Load messages from execution logs
+    all_messages, load_errors = _load_execution_logs_for_session(
+        execution_ids,
+        kiro_data_dir,
+        execution_log_index,
+        include_tool_details
+    )
+    errors.extend(load_errors)
+    
+    if not all_messages:
+        errors.append("No messages extracted from execution logs")
+        return _fallback_to_session_history(session_data, errors)
+    
+    # Deduplicate user messages
+    deduplicated_messages = _deduplicate_user_messages(all_messages)
+    
+    # Convert to ChatMessage objects
+    session_id = session_data.get('sessionId', '')
+    chat_messages = _convert_to_chat_messages(deduplicated_messages, session_id)
+    
+    logger.info(f"Built full session with {len(chat_messages)} messages from {len(execution_ids)} executions")
+    return chat_messages, errors
+
+
+def _fallback_to_session_history(
+    session_data: Dict[str, Any],
+    errors: List[str]
+) -> Tuple[List[ChatMessage], List[str]]:
+    """Fall back to extracting messages from session history.
+    
+    Used when execution logs are not available.
+    """
+    errors.append("Falling back to session history (may contain abbreviated responses)")
+    
+    messages = []
+    history = session_data.get('history', [])
+    session_id = session_data.get('sessionId', '')
+    
+    for entry in history:
+        msg = entry.get('message', {})
+        role = msg.get('role', '')
+        content = msg.get('content', '')
+        
+        # Normalize content
+        normalized = normalize_kiro_content(content)
+        if not normalized.strip():
+            continue
+        
+        # Normalize role
+        if role == 'user':
+            pass
+        elif role == 'assistant':
+            pass
+        else:
+            continue
+        
+        chat_msg = ChatMessage(
+            role=role,
+            content=normalized,
+            timestamp=None,
+            tool_result=None,
+            source=ChatSource.KIRO_IDE,
+            execution_id=session_id,
+            context_items=None
         )
         messages.append(chat_msg)
     

@@ -300,3 +300,75 @@ class TestExportProjectChatsClaude:
             # Should only export the JSONL file
             assert len(exported) == 1
             assert 'claude' in exported[0].name.lower()
+
+
+class TestKiroDataDirValidation:
+    """Tests for kiro_data_dir path validation in _load_chat_data."""
+
+    def test_valid_kiro_data_dir_structure(self):
+        """Test that valid kiro_data_dir structure is detected correctly."""
+        with TemporaryDirectory() as tmpdir:
+            # Create proper kiro.kiroagent structure
+            kiro_data_dir = Path(tmpdir) / "kiro.kiroagent"
+            workspace_sessions = kiro_data_dir / "workspace-sessions"
+            encoded_workspace = workspace_sessions / "dGVzdC13b3Jrc3BhY2U"  # base64 encoded
+            encoded_workspace.mkdir(parents=True)
+            
+            # Create a session file
+            session_data = {
+                "chat": [
+                    {"role": "human", "content": "Hello"},
+                    {"role": "bot", "content": "Hi there"}
+                ]
+            }
+            session_file = encoded_workspace / "session.json"
+            with open(session_file, 'w', encoding='utf-8') as f:
+                json.dump(session_data, f)
+            
+            # Create hash-named execution log directory
+            hash_dir = kiro_data_dir / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+            subdir = hash_dir / "74abcdef"
+            subdir.mkdir(parents=True)
+            (subdir / "exec-001").write_text('{"executionId": "exec-001"}')
+            
+            from src.exporters import _load_chat_data
+            
+            # Load with workspace_dir, should infer kiro_data_dir
+            chat_data, source, errors = _load_chat_data(
+                session_file,
+                workspace_dir=encoded_workspace
+            )
+            
+            assert source == ChatSource.KIRO_IDE
+            assert len(chat_data) == 2
+
+    def test_invalid_kiro_data_dir_reports_error(self):
+        """Test that invalid kiro_data_dir structure reports error."""
+        with TemporaryDirectory() as tmpdir:
+            # Create workspace structure without proper kiro.kiroagent parent
+            workspace_dir = Path(tmpdir) / "some" / "random" / "path"
+            workspace_dir.mkdir(parents=True)
+            
+            session_data = {
+                "chat": [
+                    {"role": "human", "content": "Hello"},
+                    {"role": "bot", "content": "Hi"}
+                ]
+            }
+            session_file = workspace_dir / "session.json"
+            with open(session_file, 'w', encoding='utf-8') as f:
+                json.dump(session_data, f)
+            
+            from src.exporters import _load_chat_data
+            
+            # Load with workspace_dir pointing to invalid structure
+            chat_data, source, errors = _load_chat_data(
+                session_file,
+                workspace_dir=workspace_dir,
+                use_execution_logs=True
+            )
+            
+            # Should still work but report error about missing execution logs
+            assert source == ChatSource.KIRO_IDE
+            # Should have error about inferred path
+            assert any("does not" in e.lower() or "not found" in e.lower() for e in errors)

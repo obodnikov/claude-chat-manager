@@ -17,7 +17,13 @@ from .exceptions import ExportError
 from .filters import ChatFilter
 from .sanitizer import Sanitizer
 from .config import config
-from .kiro_parser import parse_kiro_chat_file, extract_kiro_messages, extract_kiro_messages_enriched, build_execution_log_index
+from .kiro_parser import (
+    parse_kiro_chat_file, 
+    extract_kiro_messages, 
+    extract_kiro_messages_enriched, 
+    build_execution_log_index,
+    build_full_session_from_executions
+)
 from .models import ChatSource, ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -116,7 +122,9 @@ def _log_enrichment_errors(errors: List[str], context: str) -> None:
 def _load_chat_data(
     file_path: Path,
     workspace_dir: Optional[Path] = None,
-    execution_log_index: Optional[Dict[str, Path]] = None
+    execution_log_index: Optional[Dict[str, Path]] = None,
+    use_execution_logs: bool = False,
+    kiro_data_dir: Optional[Path] = None
 ) -> tuple[List[Dict[str, Any]], ChatSource, List[str]]:
     """Load chat data from either Claude JSONL or Kiro JSON file.
     
@@ -127,6 +135,9 @@ def _load_chat_data(
         file_path: Path to the chat file
         workspace_dir: Optional workspace directory for Kiro execution log lookup
         execution_log_index: Optional pre-built index for faster lookups
+        use_execution_logs: If True, use build_full_session_from_executions for Kiro
+                           (recommended for wiki/book exports to get full conversations)
+        kiro_data_dir: Path to kiro.kiroagent directory (required when use_execution_logs=True)
         
     Returns:
         Tuple of (chat_data, source, errors) where:
@@ -148,16 +159,61 @@ def _load_chat_data(
         source = _detect_chat_source(file_path)
         
         if source == ChatSource.KIRO_IDE:
-            # Parse Kiro chat file
+            # Parse Kiro chat file to get session data
+            import json
+            with open(file_path, 'r', encoding='utf-8') as f:
+                session_data = json.load(f)
+            
+            # Determine kiro_data_dir if not provided
+            if kiro_data_dir is None and workspace_dir is not None:
+                # workspace_dir is typically workspace-sessions/<encoded-path>
+                # kiro_data_dir is the parent kiro.kiroagent directory
+                inferred_dir = workspace_dir.parent.parent
+                
+                # Validate the inferred directory exists and looks like kiro.kiroagent
+                if inferred_dir.exists() and inferred_dir.name == 'kiro.kiroagent':
+                    kiro_data_dir = inferred_dir
+                elif inferred_dir.exists():
+                    # Check if it contains hash-named directories (execution logs)
+                    from .kiro_parser import find_execution_log_dirs
+                    if find_execution_log_dirs(inferred_dir):
+                        kiro_data_dir = inferred_dir
+                    else:
+                        errors.append(
+                            f"Inferred kiro_data_dir '{inferred_dir}' does not contain execution logs. "
+                            f"Full conversation extraction may not work."
+                        )
+                else:
+                    errors.append(
+                        f"Inferred kiro_data_dir '{inferred_dir}' does not exist. "
+                        f"Full conversation extraction may not work."
+                    )
+            
+            # Use execution logs directly for wiki/book exports (full conversations)
+            if use_execution_logs and kiro_data_dir is not None:
+                messages, exec_errors = build_full_session_from_executions(
+                    session_data,
+                    kiro_data_dir,
+                    execution_log_index=execution_log_index,
+                    include_tool_details=False
+                )
+                errors.extend(exec_errors)
+                
+                if messages:
+                    chat_data = _convert_kiro_to_dict(messages)
+                    return chat_data, ChatSource.KIRO_IDE, errors
+                else:
+                    # Fall back to enriched extraction if no messages from execution logs
+                    errors.append("No messages from execution logs, falling back to session history")
+            
+            # Fall back to enriched extraction (for simple exports or when execution logs unavailable)
             session = parse_kiro_chat_file(file_path)
             
             # Determine workspace directory if not provided
             if workspace_dir is None:
-                # Try to infer from file path (file is in workspace_dir)
                 workspace_dir = file_path.parent
                 
             # Validate workspace directory contains execution logs
-            # (look for hash-named subdirectories with extensionless files)
             from .kiro_parser import find_execution_log_dirs
             exec_log_dirs = find_execution_log_dirs(workspace_dir)
             if not exec_log_dirs and session.execution_id:
@@ -732,9 +788,13 @@ def export_kiro_workspace(
     export_dir: Path,
     format_type: str = 'markdown',
     verbose: bool = False,
-    sanitize: Optional[bool] = None
+    sanitize: Optional[bool] = None,
+    kiro_data_dir: Optional[Path] = None
 ) -> List[Path]:
     """Export all sessions in a Kiro workspace to a directory.
+    
+    For wiki/book formats, uses execution logs directly to get full conversations
+    instead of the abbreviated session history.
     
     Args:
         workspace_dir: Path to the Kiro workspace-sessions subdirectory.
@@ -742,6 +802,7 @@ def export_kiro_workspace(
         format_type: Export format (markdown, book, pretty).
         verbose: Include additional metadata (execution IDs, context items).
         sanitize: Override .env sanitization setting (True/False/None).
+        kiro_data_dir: Path to kiro.kiroagent directory (for execution logs).
         
     Returns:
         List of exported file paths.
@@ -761,8 +822,17 @@ def export_kiro_workspace(
         
         logger.info(f"Exporting {len(sessions)} Kiro sessions from workspace")
         
-        # Build execution log index for faster lookups
-        execution_log_index = build_execution_log_index(workspace_dir)
+        # Determine kiro_data_dir if not provided
+        # workspace_dir is typically workspace-sessions/<encoded-path>
+        # kiro_data_dir is the parent kiro.kiroagent directory
+        if kiro_data_dir is None:
+            kiro_data_dir = workspace_dir.parent.parent
+        
+        # Build execution log index for faster lookups (from kiro_data_dir, not workspace_dir)
+        execution_log_index = build_execution_log_index(kiro_data_dir)
+        
+        # Use execution logs for wiki/book formats to get full conversations
+        use_execution_logs = format_type in ('book', 'wiki')
         
         for session in sessions:
             chat_file = session.chat_file_path
@@ -773,11 +843,13 @@ def export_kiro_workspace(
                 continue
             
             try:
-                # Load chat data for filename generation (with enrichment)
+                # Load chat data with execution logs for wiki/book formats
                 chat_data, source, errors = _load_chat_data(
                     chat_file,
                     workspace_dir=workspace_dir,
-                    execution_log_index=execution_log_index
+                    execution_log_index=execution_log_index,
+                    use_execution_logs=use_execution_logs,
+                    kiro_data_dir=kiro_data_dir
                 )
                 
                 # Log enrichment errors using standardized logging
@@ -792,12 +864,18 @@ def export_kiro_workspace(
                 
                 export_file = export_dir / f"{filename}.md"
                 
-                # Export the chat (pass workspace_dir for enrichment)
-                export_chat_to_file(
-                    chat_file, export_file, format_type,
-                    sanitize=sanitize, verbose=verbose,
-                    workspace_dir=workspace_dir
-                )
+                # Export the chat
+                if format_type == 'markdown':
+                    content = export_chat_markdown(chat_data, verbose=verbose)
+                elif format_type == 'book':
+                    content = export_chat_book(chat_data, sanitize=sanitize)
+                elif format_type == 'pretty':
+                    content = export_chat_pretty(chat_data, verbose=verbose)
+                else:
+                    content = export_chat_markdown(chat_data, verbose=verbose)
+                
+                with open(export_file, 'w', encoding='utf-8') as f:
+                    f.write(content)
                 exported_files.append(export_file)
                 
             except Exception as e:

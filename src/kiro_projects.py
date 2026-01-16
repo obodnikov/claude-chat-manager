@@ -42,6 +42,7 @@ class KiroWorkspace:
         session_count: Number of sessions in this workspace
         last_modified: Last modification timestamp as string
         session_dir: Path to the Kiro session directory where .chat files are stored
+        kiro_data_dir: Path to the parent kiro.kiroagent directory (for execution logs)
     """
     workspace_path: str
     workspace_name: str
@@ -49,6 +50,7 @@ class KiroWorkspace:
     session_count: int
     last_modified: str
     session_dir: Path = None
+    kiro_data_dir: Path = None
 
 
 def decode_workspace_path(encoded_path: str) -> str:
@@ -199,7 +201,8 @@ def discover_kiro_workspaces(kiro_data_dir: Path) -> List[KiroWorkspace]:
                 sessions=sessions,
                 session_count=len(sessions),
                 last_modified=last_modified,
-                session_dir=workspace_dir
+                session_dir=workspace_dir,
+                kiro_data_dir=kiro_data_dir
             ))
         except (ChatFileNotFoundError, InvalidChatFileError):
             # Skip workspaces with missing or invalid sessions.json

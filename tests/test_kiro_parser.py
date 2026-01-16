@@ -334,22 +334,24 @@ class TestFindExecutionLogDirs:
 
     def test_find_dirs_with_extensionless_files(self, tmp_path):
         """Test finding directories containing extensionless files."""
-        # Create a hash-named directory with extensionless file
-        hash_dir = tmp_path / "abc123def456"
-        hash_dir.mkdir()
-        (hash_dir / "execution-id-1").write_text('{"executionId": "test"}')
+        # Create a hash-named directory (32 hex chars) with subdirectory containing extensionless file
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        (subdir / "execution-id-1").write_text('{"executionId": "test"}')
         
         result = find_execution_log_dirs(tmp_path)
         
         assert len(result) == 1
-        assert result[0] == hash_dir
+        assert result[0] == subdir
 
     def test_skip_dirs_without_extensionless_files(self, tmp_path):
         """Test that directories with only extension files are skipped."""
-        # Create directory with only .json files
-        json_dir = tmp_path / "json_only"
-        json_dir.mkdir()
-        (json_dir / "file.json").write_text('{}')
+        # Create hash-named directory with subdirectory containing only .json files
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "json_only"
+        subdir.mkdir(parents=True)
+        (subdir / "file.json").write_text('{}')
         
         result = find_execution_log_dirs(tmp_path)
         
@@ -371,9 +373,11 @@ class TestBuildExecutionLogIndex:
 
     def test_build_index_single_file(self, tmp_path):
         """Test building index with single execution log."""
-        hash_dir = tmp_path / "hash123"
-        hash_dir.mkdir()
-        log_file = hash_dir / "exec-001"
+        # Create proper hash-named directory structure
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        log_file = subdir / "exec-001"
         log_file.write_text(json.dumps({"executionId": "exec-001", "data": "test"}))
         
         index = build_execution_log_index(tmp_path)
@@ -383,11 +387,13 @@ class TestBuildExecutionLogIndex:
 
     def test_build_index_multiple_files(self, tmp_path):
         """Test building index with multiple execution logs."""
-        hash_dir = tmp_path / "hash123"
-        hash_dir.mkdir()
+        # Create proper hash-named directory structure
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
         
         for i in range(3):
-            log_file = hash_dir / f"exec-{i:03d}"
+            log_file = subdir / f"exec-{i:03d}"
             log_file.write_text(json.dumps({"executionId": f"exec-{i:03d}"}))
         
         index = build_execution_log_index(tmp_path)
@@ -399,10 +405,12 @@ class TestBuildExecutionLogIndex:
 
     def test_skip_invalid_json(self, tmp_path):
         """Test that invalid JSON files are skipped."""
-        hash_dir = tmp_path / "hash123"
-        hash_dir.mkdir()
-        (hash_dir / "invalid").write_text("not json")
-        (hash_dir / "valid").write_text(json.dumps({"executionId": "valid-id"}))
+        # Create proper hash-named directory structure
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        (subdir / "invalid").write_text("not json")
+        (subdir / "valid").write_text(json.dumps({"executionId": "valid-id"}))
         
         index = build_execution_log_index(tmp_path)
         
@@ -411,9 +419,11 @@ class TestBuildExecutionLogIndex:
 
     def test_skip_files_without_execution_id(self, tmp_path):
         """Test that files without executionId are skipped."""
-        hash_dir = tmp_path / "hash123"
-        hash_dir.mkdir()
-        (hash_dir / "no-id").write_text(json.dumps({"data": "no execution id"}))
+        # Create proper hash-named directory structure
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        (subdir / "no-id").write_text(json.dumps({"data": "no execution id"}))
         
         index = build_execution_log_index(tmp_path)
         
@@ -543,10 +553,11 @@ class TestEnrichChatWithExecutionLog:
 
     def test_enrich_replaces_bot_content(self, tmp_path):
         """Test that bot content is replaced with full response."""
-        # Create execution log
-        hash_dir = tmp_path / "hash123"
-        hash_dir.mkdir()
-        log_file = hash_dir / "exec-001"
+        # Create execution log with proper hash-named directory structure
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        log_file = subdir / "exec-001"
         log_file.write_text(json.dumps({
             "executionId": "exec-001",
             "messagesFromExecutionId": [
@@ -592,9 +603,10 @@ class TestEnrichChatWithExecutionLog:
     def test_warning_when_message_count_mismatch(self, tmp_path):
         """Test warning when bot message counts don't match."""
         # Create execution log with 1 bot response
-        hash_dir = tmp_path / "hash123"
-        hash_dir.mkdir()
-        log_file = hash_dir / "exec-001"
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        log_file = subdir / "exec-001"
         log_file.write_text(json.dumps({
             "executionId": "exec-001",
             "messagesFromExecutionId": [
@@ -624,9 +636,10 @@ class TestEnrichChatWithExecutionLog:
 
     def test_preserves_user_messages(self, tmp_path):
         """Test that user messages are not modified."""
-        hash_dir = tmp_path / "hash123"
-        hash_dir.mkdir()
-        log_file = hash_dir / "exec-001"
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        log_file = subdir / "exec-001"
         log_file.write_text(json.dumps({
             "executionId": "exec-001",
             "messagesFromExecutionId": [
@@ -653,10 +666,11 @@ class TestExtractKiroMessagesEnriched:
 
     def test_enriched_extraction_with_workspace(self, tmp_path):
         """Test enriched extraction when workspace is provided."""
-        # Create execution log
-        hash_dir = tmp_path / "hash123"
-        hash_dir.mkdir()
-        log_file = hash_dir / "exec-001"
+        # Create execution log with proper hash-named directory structure
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        log_file = subdir / "exec-001"
         log_file.write_text(json.dumps({
             "executionId": "exec-001",
             "messagesFromExecutionId": [
@@ -709,10 +723,11 @@ class TestExtractKiroMessagesEnriched:
 
     def test_uses_prebuilt_index(self, tmp_path):
         """Test that prebuilt index is used for faster lookups."""
-        # Create execution log
-        hash_dir = tmp_path / "hash123"
-        hash_dir.mkdir()
-        log_file = hash_dir / "exec-001"
+        # Create execution log with proper hash-named directory structure
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        log_file = subdir / "exec-001"
         log_file.write_text(json.dumps({
             "executionId": "exec-001",
             "messagesFromExecutionId": [
@@ -743,9 +758,10 @@ class TestExtractKiroMessagesEnriched:
     def test_strict_mode_skips_on_mismatch(self, tmp_path):
         """Test that strict mode skips enrichment when counts don't match."""
         # Create execution log with 1 bot response
-        hash_dir = tmp_path / "hash123"
-        hash_dir.mkdir()
-        log_file = hash_dir / "exec-001"
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        log_file = subdir / "exec-001"
         log_file.write_text(json.dumps({
             "executionId": "exec-001",
             "messagesFromExecutionId": [
@@ -777,9 +793,10 @@ class TestExtractKiroMessagesEnriched:
 
     def test_execution_id_mismatch_skips_enrichment(self, tmp_path):
         """Test that executionId mismatch in log file skips enrichment."""
-        hash_dir = tmp_path / "hash123"
-        hash_dir.mkdir()
-        log_file = hash_dir / "exec-001"
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        log_file = subdir / "exec-001"
         # Log file has different executionId
         log_file.write_text(json.dumps({
             "executionId": "different-id",
@@ -807,9 +824,10 @@ class TestExtractKiroMessagesEnriched:
 
     def test_extra_responses_in_log_ignored(self, tmp_path):
         """Test that extra bot responses in execution log are ignored."""
-        hash_dir = tmp_path / "hash123"
-        hash_dir.mkdir()
-        log_file = hash_dir / "exec-001"
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        log_file = subdir / "exec-001"
         # Log has 3 bot responses
         log_file.write_text(json.dumps({
             "executionId": "exec-001",
@@ -901,10 +919,11 @@ class TestEnrichmentWithValidation:
 
     def test_validation_prevents_mismatched_enrichment(self, tmp_path):
         """Test that validation prevents obviously wrong enrichments."""
-        # Create execution log
-        hash_dir = tmp_path / "hash123"
-        hash_dir.mkdir()
-        log_file = hash_dir / "exec-001"
+        # Create execution log with proper hash-named directory structure
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        log_file = subdir / "exec-001"
         log_file.write_text(json.dumps({
             "executionId": "exec-001",
             "messagesFromExecutionId": [
@@ -931,9 +950,10 @@ class TestEnrichmentWithValidation:
 
     def test_brief_acknowledgment_enriched_successfully(self, tmp_path):
         """Test that brief acknowledgments are enriched without validation errors."""
-        hash_dir = tmp_path / "hash123"
-        hash_dir.mkdir()
-        log_file = hash_dir / "exec-001"
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        log_file = subdir / "exec-001"
         log_file.write_text(json.dumps({
             "executionId": "exec-001",
             "messagesFromExecutionId": [
@@ -955,3 +975,326 @@ class TestEnrichmentWithValidation:
         assert not any("validation failed" in e.lower() for e in errors)
         # Should be enriched
         assert enriched["chat"][1]["content"] == "Here's the full detailed response"
+
+
+# Import additional functions for full session extraction tests
+from src.kiro_parser import (
+    extract_execution_ids_from_session,
+    extract_messages_from_execution_log,
+    build_full_session_from_executions
+)
+
+
+class TestExtractExecutionIdsFromSession:
+    """Tests for extract_execution_ids_from_session function."""
+
+    def test_extract_single_execution_id(self):
+        """Test extracting single executionId from session."""
+        session_data = {
+            "history": [
+                {"message": {"role": "user", "content": "Hello"}},
+                {"message": {"role": "assistant", "content": "On it."}, "executionId": "exec-001"}
+            ]
+        }
+        
+        result = extract_execution_ids_from_session(session_data)
+        
+        assert result == ["exec-001"]
+
+    def test_extract_multiple_execution_ids(self):
+        """Test extracting multiple executionIds from session."""
+        session_data = {
+            "history": [
+                {"message": {"role": "user", "content": "First question"}},
+                {"message": {"role": "assistant", "content": "On it."}, "executionId": "exec-001"},
+                {"message": {"role": "user", "content": "Second question"}},
+                {"message": {"role": "assistant", "content": "On it."}, "executionId": "exec-002"}
+            ]
+        }
+        
+        result = extract_execution_ids_from_session(session_data)
+        
+        assert result == ["exec-001", "exec-002"]
+
+    def test_no_duplicate_execution_ids(self):
+        """Test that duplicate executionIds are not returned."""
+        session_data = {
+            "history": [
+                {"message": {"role": "assistant", "content": "On it."}, "executionId": "exec-001"},
+                {"message": {"role": "assistant", "content": "On it."}, "executionId": "exec-001"}
+            ]
+        }
+        
+        result = extract_execution_ids_from_session(session_data)
+        
+        assert result == ["exec-001"]
+
+    def test_empty_history(self):
+        """Test with empty history."""
+        session_data = {"history": []}
+        
+        result = extract_execution_ids_from_session(session_data)
+        
+        assert result == []
+
+    def test_no_execution_ids(self):
+        """Test with history entries without executionIds."""
+        session_data = {
+            "history": [
+                {"message": {"role": "user", "content": "Hello"}},
+                {"message": {"role": "assistant", "content": "Hi"}}
+            ]
+        }
+        
+        result = extract_execution_ids_from_session(session_data)
+        
+        assert result == []
+
+
+class TestExtractMessagesFromExecutionLog:
+    """Tests for extract_messages_from_execution_log function."""
+
+    def test_extract_human_and_bot_messages(self):
+        """Test extracting human and bot messages."""
+        execution_log = {
+            "messagesFromExecutionId": [
+                {"role": "human", "entries": [{"type": "text", "text": "What is Python?"}]},
+                {"role": "bot", "entries": [{"type": "text", "text": "Python is a programming language."}]}
+            ]
+        }
+        
+        result = extract_messages_from_execution_log(execution_log)
+        
+        assert len(result) == 2
+        assert result[0]["role"] == "human"
+        assert result[0]["content"] == "What is Python?"
+        assert result[1]["role"] == "bot"
+        assert result[1]["content"] == "Python is a programming language."
+
+    def test_skip_tool_messages_by_default(self):
+        """Test that tool messages are skipped by default."""
+        execution_log = {
+            "messagesFromExecutionId": [
+                {"role": "human", "entries": [{"type": "text", "text": "Read file"}]},
+                {"role": "bot", "entries": [{"type": "text", "text": "Reading..."}]},
+                {"role": "tool", "entries": [{"type": "text", "text": "File content"}]}
+            ]
+        }
+        
+        result = extract_messages_from_execution_log(execution_log)
+        
+        assert len(result) == 2
+        assert all(msg["role"] != "tool" for msg in result)
+
+    def test_include_tool_details(self):
+        """Test including tool details when requested."""
+        execution_log = {
+            "messagesFromExecutionId": [
+                {"role": "bot", "entries": [
+                    {"type": "text", "text": "Let me read that"},
+                    {"type": "toolUse", "name": "readFile", "id": "tool-1", "args": {"path": "test.py"}}
+                ]}
+            ]
+        }
+        
+        result = extract_messages_from_execution_log(execution_log, include_tool_details=True)
+        
+        assert len(result) == 1
+        assert "[Tool: readFile]" in result[0]["content"]
+
+    def test_skip_environment_context(self):
+        """Test that EnvironmentContext blocks are skipped."""
+        execution_log = {
+            "messagesFromExecutionId": [
+                {"role": "human", "entries": [
+                    {"type": "text", "text": "Hello"},
+                    {"type": "text", "text": "<EnvironmentContext>...</EnvironmentContext>"}
+                ]}
+            ]
+        }
+        
+        result = extract_messages_from_execution_log(execution_log)
+        
+        assert len(result) == 1
+        assert "EnvironmentContext" not in result[0]["content"]
+
+    def test_empty_messages(self):
+        """Test with empty messagesFromExecutionId."""
+        execution_log = {"messagesFromExecutionId": []}
+        
+        result = extract_messages_from_execution_log(execution_log)
+        
+        assert result == []
+
+    def test_fallback_to_input_data(self):
+        """Test fallback to input.data.messagesFromExecutionId."""
+        execution_log = {
+            "input": {
+                "data": {
+                    "messagesFromExecutionId": [
+                        {"role": "human", "entries": [{"type": "text", "text": "Fallback test"}]}
+                    ]
+                }
+            }
+        }
+        
+        result = extract_messages_from_execution_log(execution_log)
+        
+        assert len(result) == 1
+        assert result[0]["content"] == "Fallback test"
+
+
+class TestBuildFullSessionFromExecutions:
+    """Tests for build_full_session_from_executions function."""
+
+    def test_build_full_session_single_execution(self, tmp_path):
+        """Test building full session from single execution log."""
+        # Create execution log directory structure
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        
+        # Create execution log file
+        log_file = subdir / "exec-001"
+        log_file.write_text(json.dumps({
+            "executionId": "exec-001",
+            "messagesFromExecutionId": [
+                {"role": "human", "entries": [{"type": "text", "text": "What is Python?"}]},
+                {"role": "bot", "entries": [{"type": "text", "text": "Python is a high-level programming language."}]}
+            ]
+        }))
+        
+        # Create session data
+        session_data = {
+            "sessionId": "session-123",
+            "history": [
+                {"message": {"role": "user", "content": "What is Python?"}},
+                {"message": {"role": "assistant", "content": "On it."}, "executionId": "exec-001"}
+            ]
+        }
+        
+        messages, errors = build_full_session_from_executions(session_data, tmp_path)
+        
+        assert len(messages) == 2
+        assert messages[0].role == "user"
+        assert messages[0].content == "What is Python?"
+        assert messages[1].role == "assistant"
+        assert "Python is a high-level programming language" in messages[1].content
+
+    def test_build_full_session_multiple_executions(self, tmp_path):
+        """Test building full session from multiple execution logs."""
+        # Create execution log directory structure
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        
+        # Create first execution log
+        log_file1 = subdir / "exec-001"
+        log_file1.write_text(json.dumps({
+            "executionId": "exec-001",
+            "messagesFromExecutionId": [
+                {"role": "human", "entries": [{"type": "text", "text": "First question"}]},
+                {"role": "bot", "entries": [{"type": "text", "text": "First answer"}]}
+            ]
+        }))
+        
+        # Create second execution log
+        log_file2 = subdir / "exec-002"
+        log_file2.write_text(json.dumps({
+            "executionId": "exec-002",
+            "messagesFromExecutionId": [
+                {"role": "human", "entries": [{"type": "text", "text": "Second question"}]},
+                {"role": "bot", "entries": [{"type": "text", "text": "Second answer"}]}
+            ]
+        }))
+        
+        # Create session data
+        session_data = {
+            "sessionId": "session-123",
+            "history": [
+                {"message": {"role": "user", "content": "First question"}},
+                {"message": {"role": "assistant", "content": "On it."}, "executionId": "exec-001"},
+                {"message": {"role": "user", "content": "Second question"}},
+                {"message": {"role": "assistant", "content": "On it."}, "executionId": "exec-002"}
+            ]
+        }
+        
+        messages, errors = build_full_session_from_executions(session_data, tmp_path)
+        
+        # Should have 4 messages (2 from each execution)
+        assert len(messages) == 4
+        assert messages[0].content == "First question"
+        assert messages[1].content == "First answer"
+        assert messages[2].content == "Second question"
+        assert messages[3].content == "Second answer"
+
+    def test_fallback_when_no_execution_ids(self, tmp_path):
+        """Test fallback to session history when no executionIds."""
+        session_data = {
+            "sessionId": "session-123",
+            "history": [
+                {"message": {"role": "user", "content": "Hello"}},
+                {"message": {"role": "assistant", "content": "Hi there"}}
+            ]
+        }
+        
+        messages, errors = build_full_session_from_executions(session_data, tmp_path)
+        
+        # Should fall back to session history
+        assert len(messages) == 2
+        assert any("No executionIds" in e for e in errors)
+
+    def test_fallback_when_execution_log_not_found(self, tmp_path):
+        """Test fallback when execution log file not found."""
+        session_data = {
+            "sessionId": "session-123",
+            "history": [
+                {"message": {"role": "user", "content": "Hello"}},
+                {"message": {"role": "assistant", "content": "On it."}, "executionId": "nonexistent-exec"}
+            ]
+        }
+        
+        messages, errors = build_full_session_from_executions(session_data, tmp_path)
+        
+        # Should have error about not finding execution log
+        assert any("not found" in e.lower() for e in errors)
+
+    def test_deduplicates_user_messages(self, tmp_path):
+        """Test that duplicate user messages are deduplicated."""
+        # Create execution log directory structure
+        hash_dir = tmp_path / "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        subdir = hash_dir / "74abcdef"
+        subdir.mkdir(parents=True)
+        
+        # Create execution logs with same user message
+        log_file1 = subdir / "exec-001"
+        log_file1.write_text(json.dumps({
+            "executionId": "exec-001",
+            "messagesFromExecutionId": [
+                {"role": "human", "entries": [{"type": "text", "text": "Same question"}]},
+                {"role": "bot", "entries": [{"type": "text", "text": "First answer"}]}
+            ]
+        }))
+        
+        log_file2 = subdir / "exec-002"
+        log_file2.write_text(json.dumps({
+            "executionId": "exec-002",
+            "messagesFromExecutionId": [
+                {"role": "human", "entries": [{"type": "text", "text": "Same question"}]},
+                {"role": "bot", "entries": [{"type": "text", "text": "Second answer"}]}
+            ]
+        }))
+        
+        session_data = {
+            "sessionId": "session-123",
+            "history": [
+                {"message": {"role": "assistant", "content": "On it."}, "executionId": "exec-001"},
+                {"message": {"role": "assistant", "content": "On it."}, "executionId": "exec-002"}
+            ]
+        }
+        
+        messages, errors = build_full_session_from_executions(session_data, tmp_path)
+        
+        # Should deduplicate the user message
+        user_messages = [m for m in messages if m.role == "user"]
+        assert len(user_messages) == 1
