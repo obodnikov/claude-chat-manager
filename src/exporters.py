@@ -749,9 +749,8 @@ def export_project_chats(
                 logger.warning(f"Failed to parse chat file {chat_file.name}: {e}, skipping")
                 continue
 
-            # Filter trivial chats for book format (only for Claude Desktop format)
-            # Kiro dict format may have different structure that filter doesn't handle well
-            if chat_filter and source != ChatSource.KIRO_IDE and chat_filter.is_pointless_chat(chat_data):
+            # Filter trivial chats for book format (works for both Claude and Kiro)
+            if chat_filter and chat_filter.is_pointless_chat(chat_data):
                 logger.info(f"Filtering out trivial chat: {chat_file.name}")
                 filtered_count += 1
                 continue

@@ -218,11 +218,14 @@ class TestExportProjectChatsKiro:
             project_dir.mkdir()
             export_dir = Path(tmpdir) / "export"
             
+            # Create a non-trivial chat (min 3 messages, min 75 words)
             chat_data = {
                 "executionId": "exec-123",
                 "chat": [
-                    {"role": "human", "content": "What is Python?"},
-                    {"role": "bot", "content": "Python is a programming language."}
+                    {"role": "human", "content": "Can you explain what Python is and how it differs from other programming languages like Java or C++?"},
+                    {"role": "bot", "content": "Python is a high-level, interpreted programming language known for its simplicity and readability. Unlike Java or C++, Python uses dynamic typing and doesn't require explicit variable declarations. It emphasizes code readability with its clean syntax and significant whitespace."},
+                    {"role": "human", "content": "That's helpful. What are some common use cases for Python in modern software development?"},
+                    {"role": "bot", "content": "Python is widely used in web development with frameworks like Django and Flask, data science and machine learning with libraries like NumPy, Pandas, and TensorFlow, automation and scripting, and backend API development."}
                 ],
                 "context": []
             }

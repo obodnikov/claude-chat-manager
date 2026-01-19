@@ -60,9 +60,10 @@ class ChatFilter:
             return False
 
         # Extract conversation messages (exclude system messages)
+        # Support both Claude ('user'/'assistant') and Kiro ('human'/'bot') role names
         messages = [
             entry for entry in chat_data
-            if entry.get('message', {}).get('role') in ('user', 'assistant')
+            if entry.get('message', {}).get('role') in ('user', 'assistant', 'human', 'bot')
         ]
 
         # Check 1: Message count threshold
@@ -81,9 +82,10 @@ class ChatFilter:
             return True
 
         # Check 3: Keyword detection in first user message
+        # Support both Claude ('user') and Kiro ('human') role names
         first_user_text = None
         for entry in messages:
-            if entry.get('message', {}).get('role') == 'user':
+            if entry.get('message', {}).get('role') in ('user', 'human'):
                 first_user_text = self.extract_text_only(
                     entry.get('message', {}).get('content', '')
                 ).lower().strip()
