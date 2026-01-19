@@ -86,6 +86,86 @@ class TestFormatContent:
         result = format_content(content, "user")
         assert "Hello world" in result
 
+    def test_format_content_kiro_image_url(self):
+        """Test formatting Kiro image_url blocks."""
+        content = [
+            {"type": "text", "text": "Check this image:"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
+        ]
+        result = format_content(content, "user")
+        assert "Check this image:" in result
+        assert "[Image]" in result
+
+    def test_format_content_kiro_tool_use(self):
+        """Test formatting Kiro tool use blocks."""
+        content = [
+            {"type": "text", "text": "Running tool"},
+            {"type": "tool_use", "name": "readFile", "input": {"file_path": "test.py"}}
+        ]
+        result = format_content(content, "assistant")
+        assert "Running tool" in result
+        assert "[Tool Use: readFile]" in result
+
+    def test_format_content_kiro_mixed_blocks(self):
+        """Test formatting mixed Kiro content blocks."""
+        content = [
+            {"type": "text", "text": "First part"},
+            {"type": "image_url", "image_url": {"url": "..."}},
+            {"type": "text", "text": "Second part"},
+            {"type": "tool_use", "name": "execute", "input": {}}
+        ]
+        result = format_content(content, "user")
+        assert "First part" in result
+        assert "[Image]" in result
+        assert "Second part" in result
+        assert "[Tool Use: execute]" in result
+
+    def test_format_content_malformed_tool_use_missing_name(self):
+        """Test formatting tool use block with missing name key."""
+        content = [
+            {"type": "tool_use", "input": {"param": "value"}}
+        ]
+        result = format_content(content, "assistant")
+        # Should use 'unknown' as fallback
+        assert "[Tool Use: unknown]" in result
+
+    def test_format_content_malformed_tool_use_missing_input(self):
+        """Test formatting tool use block with missing input key."""
+        content = [
+            {"type": "tool_use", "name": "myTool"}
+        ]
+        result = format_content(content, "assistant")
+        # Should still format the tool name
+        assert "[Tool Use: myTool]" in result
+
+    def test_format_content_malformed_image_url_missing_key(self):
+        """Test formatting image_url block with missing image_url key."""
+        content = [
+            {"type": "image_url"}
+        ]
+        result = format_content(content, "user")
+        # Should still indicate image presence
+        assert "[Image]" in result
+
+    def test_format_content_malformed_image_url_invalid_structure(self):
+        """Test formatting image_url block with invalid structure."""
+        content = [
+            {"type": "image_url", "image_url": "not-a-dict"}
+        ]
+        result = format_content(content, "user")
+        # Should still indicate image presence
+        assert "[Image]" in result
+
+    def test_format_content_text_block_missing_text_key(self):
+        """Test formatting text block with missing text key."""
+        content = [
+            {"type": "text"}
+        ]
+        result = format_content(content, "user")
+        # Should handle gracefully - empty text is filtered out
+        # Result should be empty message indicator
+        assert "[Empty user message]" in result or result == ""
+
 
 class TestFormatToolUse:
     """Tests for format_tool_use function."""

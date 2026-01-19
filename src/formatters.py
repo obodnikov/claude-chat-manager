@@ -116,30 +116,46 @@ def format_content(content: Any, role: str) -> str:
     if isinstance(content, str):
         return content.strip() if content.strip() else f'[Empty {role} message]'
 
-    # Handle list content (Claude's structured format)
+    # Handle list content (Claude's and Kiro's structured format)
     if isinstance(content, list):
         text_parts = []
         for item in content:
             if isinstance(item, dict):
-                if item.get('type') == 'text':
+                item_type = item.get('type')
+                
+                if item_type == 'text':
                     text = item.get('text', '').strip()
                     if text:
                         text_parts.append(text)
-                elif item.get('type') == 'tool_use':
+                        
+                elif item_type == 'tool_use':
+                    # Safe access to tool name with fallback
                     tool_name = item.get('name', 'unknown')
                     tool_input = item.get('input', {})
                     text_parts.append(f'🔧 [Tool Use: {tool_name}]')
-                    if tool_input:
+                    if tool_input and isinstance(tool_input, dict):
                         text_parts.extend(format_tool_use(tool_input))
-                elif item.get('type') == 'tool_result':
+                        
+                elif item_type == 'tool_result':
                     result = item.get('content', '')
                     if isinstance(result, str):
                         preview = result[:200] + '...' if len(result) > 200 else result
                         text_parts.append(f'⚙️ [Tool Result: {preview}]')
                     else:
                         text_parts.append('⚙️ [Tool Result]')
-                elif item.get('type') == 'image':
-                    text_parts.append('🖼️ [Image attachment]')
+                        
+                elif item_type == 'image':
+                    text_parts.append('🖼️ [Image]')
+                    
+                elif item_type == 'image_url':
+                    # Kiro's image reference format
+                    # Validate that image_url key exists and is a dict
+                    if 'image_url' in item and isinstance(item['image_url'], dict):
+                        text_parts.append('🖼️ [Image]')
+                    else:
+                        # Malformed image_url block, still indicate image presence
+                        text_parts.append('🖼️ [Image]')
+                        
             elif isinstance(item, str):
                 if item.strip():
                     text_parts.append(item.strip())

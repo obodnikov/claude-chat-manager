@@ -12,6 +12,7 @@ import logging
 
 from .config import config
 from .colors import Colors, print_colored
+from .models import ProjectInfo, ChatSource
 from .projects import (
     list_all_projects,
     find_project_by_name,
@@ -30,6 +31,7 @@ from .exporters import (
 from .display import display_with_pager
 from .formatters import clean_project_name, sanitize_for_filename
 from .exceptions import ProjectNotFoundError, ChatFileNotFoundError
+from .models import ChatSource
 
 logger = logging.getLogger(__name__)
 
@@ -83,59 +85,75 @@ def get_export_dirname(project_name: str, export_type: str) -> str:
     return f"{hostname}-{project_sanitized}-{export_type}-{timestamp}"
 
 
-def display_projects_list() -> None:
-    """Display list of all available projects."""
+def display_projects_list(source_filter: Optional[ChatSource] = None) -> None:
+    """Display list of all available projects.
+    
+    Args:
+        source_filter: Filter by source (None = all sources).
+    """
     try:
-        projects = list_all_projects()
+        projects = list_all_projects(source_filter)
 
-        print_colored("📁 Available Claude Projects", Colors.BLUE)
+        # Determine title based on filter
+        if source_filter == ChatSource.CLAUDE_DESKTOP:
+            title = "📁 Available Claude Desktop Projects"
+        elif source_filter == ChatSource.KIRO_IDE:
+            title = "📁 Available Kiro IDE Projects"
+        else:
+            title = "📁 Available Projects (All Sources)"
+        
+        print_colored(title, Colors.BLUE)
         print("=" * 60)
 
         if not projects:
             print_colored("No projects with chat files found", Colors.YELLOW)
             return
 
-        print_colored("Project Name                 Chats  Messages   Last Modified", Colors.CYAN)
-        print("-" * 70)
+        print_colored("Source   Project Name                 Chats  Messages   Last Modified", Colors.CYAN)
+        print("-" * 80)
 
         for info in projects:
-            print(f"{info.name:<28} {info.file_count:>5}  {info.total_messages:>8}   {info.last_modified}")
+            source_label = "[Claude]" if info.source == ChatSource.CLAUDE_DESKTOP else "[Kiro]  "
+            print(f"{source_label} {info.name:<28} {info.file_count:>5}  {info.total_messages:>8}   {info.last_modified}")
 
     except ProjectNotFoundError as e:
         print_colored(f"❌ {e.message}", Colors.RED)
         logger.error(f"Projects directory not found: {e}")
 
 
-def display_search_results(search_term: str) -> None:
+def display_search_results(search_term: str, source_filter: Optional[ChatSource] = None) -> None:
     """Display search results for project names.
 
     Args:
         search_term: The term to search for.
+        source_filter: Filter by source (None = all sources).
     """
     print_colored(f"🔍 Searching for projects containing: '{search_term}'", Colors.BLUE)
     print("=" * 60)
 
-    found_projects = search_projects_by_name(search_term)
+    found_projects = search_projects_by_name(search_term, source_filter)
 
     if not found_projects:
         print_colored(f"No projects found matching '{search_term}'", Colors.YELLOW)
         return
 
     for info in found_projects:
-        print_colored(f"✅ {info.name}", Colors.GREEN)
+        source_label = "[Claude]" if info.source == ChatSource.CLAUDE_DESKTOP else "[Kiro]  "
+        print_colored(f"✅ {source_label} {info.name}", Colors.GREEN)
         print(f"   {info.file_count} chats, {info.total_messages} messages, modified: {info.last_modified}")
 
 
-def display_content_search(search_term: str) -> None:
+def display_content_search(search_term: str, source_filter: Optional[ChatSource] = None) -> None:
     """Display content search results.
 
     Args:
         search_term: The term to search for in chat content.
+        source_filter: Filter by source (None = all sources).
     """
     print_colored(f"🔍 Searching chat content for: '{search_term}'", Colors.BLUE)
     print("=" * 60)
 
-    results = search_chat_content(search_term)
+    results = search_chat_content(search_term, source_filter)
 
     if not results:
         print_colored(f"No content found matching '{search_term}'", Colors.YELLOW)
@@ -147,23 +165,25 @@ def display_content_search(search_term: str) -> None:
         print()
 
 
-def display_recent_projects(count: int = 10) -> None:
+def display_recent_projects(count: int = 10, source_filter: Optional[ChatSource] = None) -> None:
     """Display most recent projects.
 
     Args:
         count: Number of recent projects to show.
+        source_filter: Filter by source (None = all sources).
     """
     print_colored(f"⏰ {count} Most Recently Modified Projects", Colors.BLUE)
     print("=" * 60)
 
-    projects = get_recent_projects(count)
+    projects = get_recent_projects(count, source_filter)
 
     if not projects:
         print_colored("No projects found", Colors.YELLOW)
         return
 
     for info in projects:
-        print_colored(f"📝 {info.name}", Colors.GREEN)
+        source_label = "[Claude]" if info.source == ChatSource.CLAUDE_DESKTOP else "[Kiro]  "
+        print_colored(f"📝 {source_label} {info.name}", Colors.GREEN)
         print(f"   {info.file_count} chats, {info.total_messages} messages, {info.last_modified}")
 
 
@@ -200,20 +220,26 @@ def view_chat_file(file_path: Path, format_type: str = 'pretty', output_file: Op
         logger.error(f"Error viewing chat file {file_path}: {e}")
 
 
-def browse_project_interactive(project_path: Path) -> bool:
+def browse_project_interactive(project_info: ProjectInfo) -> bool:
     """Browse a project interactively.
 
     Args:
-        project_path: Path to the project directory.
+        project_info: ProjectInfo object containing project details and source.
 
     Returns:
         True to return to main menu, False to quit.
     """
-    project_name = clean_project_name(project_path.name)
-    chat_files = get_project_chat_files(project_path)
+    # Use project_info.name directly (already cleaned/decoded for Kiro projects)
+    # For Claude Desktop, clean_project_name handles the path-based name
+    if project_info.source == ChatSource.KIRO_IDE:
+        project_name = project_info.name
+    else:
+        project_name = clean_project_name(project_info.path.name)
+    chat_files = get_project_chat_files(project_info.path, project_info.source)
 
     if not chat_files:
-        print_colored(f"No JSONL chat files found in project: {project_name}", Colors.YELLOW)
+        file_type = ".json" if project_info.source == ChatSource.KIRO_IDE else "JSONL"
+        print_colored(f"No {file_type} chat files found in project: {project_name}", Colors.YELLOW)
         return True
 
     def display_menu():
@@ -273,7 +299,7 @@ def browse_project_interactive(project_path: Path) -> bool:
                 export_dir = Path(get_export_dirname(project_name, 'markdown'))
                 print_colored(f"📤 Exporting all chats to markdown in: {export_dir}", Colors.BLUE)
 
-                exported_files = export_project_chats(project_path, export_dir, 'markdown')
+                exported_files = export_project_chats(project_info.path, export_dir, 'markdown', source=project_info.source)
 
                 print_colored(f"✅ All chats exported to: {export_dir}/", Colors.GREEN)
                 for file in exported_files:
@@ -284,7 +310,7 @@ def browse_project_interactive(project_path: Path) -> bool:
                 export_dir = Path(get_export_dirname(project_name, 'book'))
                 print_colored(f"📚 Exporting all chats to book format in: {export_dir}", Colors.BLUE)
 
-                exported_files = export_project_chats(project_path, export_dir, 'book')
+                exported_files = export_project_chats(project_info.path, export_dir, 'book', source=project_info.source)
 
                 print_colored(f"✅ All chats exported to book format: {export_dir}/", Colors.GREEN)
                 for file in exported_files:
@@ -358,91 +384,140 @@ def browse_project_interactive(project_path: Path) -> bool:
             return False
 
 
-def interactive_browser() -> None:
-    """Run the interactive project browser."""
-    try:
-        projects = list_all_projects()
-    except ProjectNotFoundError as e:
-        print_colored(f"❌ {e.message}", Colors.RED)
-        print("Make sure you have Claude Desktop installed and have created projects.")
-        return
-
-    if not projects:
-        print_colored(f"No projects with chat files found", Colors.YELLOW)
-        return
-
-    # Sort by last modified (most recent first)
-    projects.sort(key=lambda x: x.last_modified, reverse=True)
-
-    print_colored("🤖 Claude JSONL Chat Browser", Colors.BLUE)
-    print("=" * 60)
-    print()
-    print_colored("Available projects:", Colors.CYAN)
-    print()
-
-    for i, info in enumerate(projects, 1):
-        name_col = f"{i:2d}) {info.name}"
-        details_col = f"({info.file_count} chats, {info.total_messages} msgs, {info.last_modified})"
-
-        if len(name_col) < 48:
-            padding = 48 - len(name_col)
-            print(f"{name_col}{' ' * padding}{details_col}")
-        else:
-            print(f"{name_col}")
-            print(f"{'':>50}{details_col}")
-
-    print()
-    print_colored("Options:", Colors.YELLOW)
-    print(f"  1-{len(projects)}) Browse specific project")
-    print("  l) List all projects with details")
-    print("  r) Show recent projects")
-    print("  c) Search chat content")
-    print("  q) Quit")
-    print()
-
+def interactive_browser(source_filter: Optional[ChatSource] = None) -> None:
+    """Run the interactive project browser.
+    
+    Args:
+        source_filter: Filter by source (None = all sources).
+    """
+    # Main loop to avoid recursion when switching sources or returning from submenus
     while True:
         try:
-            choice = input("Enter choice: ").strip()
+            projects = list_all_projects(source_filter)
+        except ProjectNotFoundError as e:
+            print_colored(f"❌ {e.message}", Colors.RED)
+            print("Make sure you have Claude Desktop installed and have created projects.")
+            return
 
-            if choice.lower() in ['q', 'quit']:
-                print_colored("👋 Goodbye!", Colors.BLUE)
-                break
-            elif choice.lower() == 'l':
-                print()
-                display_projects_list()
-                print()
-                input("Press Enter to continue...")
-                return interactive_browser()
-            elif choice.lower() == 'r':
-                print()
-                display_recent_projects(10)
-                print()
-                input("Press Enter to continue...")
-                return interactive_browser()
-            elif choice.lower() == 'c':
-                search_term = input("Enter search term: ").strip()
-                if search_term:
+        if not projects:
+            print_colored(f"No projects with chat files found", Colors.YELLOW)
+            return
+
+        # Sort by last modified (most recent first)
+        projects.sort(key=lambda x: x.last_modified, reverse=True)
+
+        # Determine title based on current filter
+        if source_filter == ChatSource.CLAUDE_DESKTOP:
+            title = "🤖 Claude Desktop Chat Browser"
+        elif source_filter == ChatSource.KIRO_IDE:
+            title = "🤖 Kiro IDE Chat Browser"
+        else:
+            title = "🤖 Chat Browser (All Sources)"
+        
+        print_colored(title, Colors.BLUE)
+        print("=" * 60)
+        print()
+        print_colored("Available projects:", Colors.CYAN)
+        print()
+
+        for i, info in enumerate(projects, 1):
+            source_label = "[Claude]" if info.source == ChatSource.CLAUDE_DESKTOP else "[Kiro]  "
+            name_col = f"{i:2d}) {source_label} {info.name}"
+            details_col = f"({info.file_count} chats, {info.total_messages} msgs, {info.last_modified})"
+
+            if len(name_col) < 48:
+                padding = 48 - len(name_col)
+                print(f"{name_col}{' ' * padding}{details_col}")
+            else:
+                print(f"{name_col}")
+                print(f"{'':>50}{details_col}")
+
+        print()
+        print_colored("Options:", Colors.YELLOW)
+        print(f"  1-{len(projects)}) Browse specific project")
+        print("  l) List all projects with details")
+        print("  r) Show recent projects")
+        print("  c) Search chat content")
+        print("  s) Switch source filter")
+        print("  q) Quit")
+        print()
+
+        # Inner loop for handling menu choices
+        menu_active = True
+        while menu_active:
+            try:
+                choice = input("Enter choice: ").strip()
+
+                if choice.lower() in ['q', 'quit']:
+                    print_colored("👋 Goodbye!", Colors.BLUE)
+                    return
+                elif choice.lower() == 's':
+                    # Switch source filter
                     print()
-                    display_content_search(search_term)
+                    print_colored("Select source:", Colors.YELLOW)
+                    print("  1) Claude Desktop only")
+                    print("  2) Kiro IDE only")
+                    print("  3) All sources")
+                    print()
+                    source_choice = input("Enter choice (1-3): ").strip()
+                    
+                    if source_choice == '1':
+                        source_filter = ChatSource.CLAUDE_DESKTOP
+                        print_colored("Switched to Claude Desktop only", Colors.GREEN)
+                    elif source_choice == '2':
+                        source_filter = ChatSource.KIRO_IDE
+                        print_colored("Switched to Kiro IDE only", Colors.GREEN)
+                    elif source_choice == '3':
+                        source_filter = None
+                        print_colored("Switched to all sources", Colors.GREEN)
+                    else:
+                        print_colored("Invalid choice, keeping current filter", Colors.RED)
+                    
                     print()
                     input("Press Enter to continue...")
-                return interactive_browser()
-            elif choice.isdigit():
-                choice_num = int(choice)
-                if 1 <= choice_num <= len(projects):
+                    # Break inner loop to refresh project list with new filter
+                    menu_active = False
+                elif choice.lower() == 'l':
                     print()
-                    should_continue = browse_project_interactive(projects[choice_num - 1].path)
-                    if should_continue:
+                    display_projects_list(source_filter)
+                    print()
+                    input("Press Enter to continue...")
+                    # Break inner loop to redisplay menu
+                    menu_active = False
+                elif choice.lower() == 'r':
+                    print()
+                    display_recent_projects(10, source_filter)
+                    print()
+                    input("Press Enter to continue...")
+                    # Break inner loop to redisplay menu
+                    menu_active = False
+                elif choice.lower() == 'c':
+                    search_term = input("Enter search term: ").strip()
+                    if search_term:
                         print()
-                        return interactive_browser()
+                        display_content_search(search_term, source_filter)
+                        print()
+                        input("Press Enter to continue...")
+                    # Break inner loop to redisplay menu
+                    menu_active = False
+                elif choice.isdigit():
+                    choice_num = int(choice)
+                    if 1 <= choice_num <= len(projects):
+                        print()
+                        should_continue = browse_project_interactive(projects[choice_num - 1])
+                        if should_continue:
+                            print()
+                            # Break inner loop to redisplay menu
+                            menu_active = False
+                        else:
+                            # User quit from project browser
+                            return
                     else:
-                        break
+                        print_colored(f"Invalid selection. Please choose 1-{len(projects)}", Colors.RED)
                 else:
-                    print_colored(f"Invalid selection. Please choose 1-{len(projects)}", Colors.RED)
-            else:
-                print_colored("Invalid choice. Please enter a number, 'l', 'r', 'c', or 'q'", Colors.RED)
+                    print_colored("Invalid choice. Please enter a number, 'l', 'r', 'c', 's', or 'q'", Colors.RED)
 
-        except (KeyboardInterrupt, EOFError):
-            print()
-            print_colored("👋 Goodbye!", Colors.BLUE)
-            break
+            except (KeyboardInterrupt, EOFError):
+                print()
+                print_colored("👋 Goodbye!", Colors.BLUE)
+                return

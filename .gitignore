@@ -53,3 +53,8 @@ logs/
 # Temporary files
 *.tmp
 *.temp
+tmp/
+
+#KIRO
+.hypothesis/
+.code_review

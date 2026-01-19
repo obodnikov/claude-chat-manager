@@ -26,6 +26,7 @@ from src.cli import (
 from src.projects import find_project_by_name
 from src.colors import print_colored, Colors
 from src.exceptions import ProjectNotFoundError, ExportError
+from src.models import ChatSource
 
 
 def perform_sanitize_preview(args: argparse.Namespace, project_path: Path) -> None:
@@ -190,6 +191,9 @@ Examples:
   %(prog)s "my-project" --wiki wiki.md --update   # Update existing wiki with new chats
   %(prog)s "my-project" --wiki wiki.md --rebuild  # Force full rebuild of existing wiki
   %(prog)s -c "update checker"                    # Search chat content
+  %(prog)s --source kiro                          # List Kiro IDE projects only
+  %(prog)s --source all                           # List both Claude and Kiro projects
+  %(prog)s --source kiro "my-project"             # Browse Kiro project
 
 Sanitization Examples:
   %(prog)s "my-project" -f book -o exports/ --sanitize            # Enable sanitization
@@ -221,6 +225,8 @@ Environment Variables:
                         default='pretty', help='Output format (default: pretty, book=clean markdown without timestamps, wiki=AI-generated single page)')
     parser.add_argument('-o', '--output', metavar='FILE', type=Path, help='Save output to file')
     parser.add_argument('-c', '--content', metavar='TERM', help='Search for content within chats')
+    parser.add_argument('--source', choices=['claude', 'kiro', 'all'],
+                        default='claude', help='Chat source to use: claude (default), kiro, or all')
     parser.add_argument('--wiki', metavar='FILE', type=Path, help='Generate wiki page from all project chats (shortcut for -f wiki -o FILE)')
     parser.add_argument('--update', action='store_true', help='Update existing wiki file with new chats (use with --wiki)')
     parser.add_argument('--rebuild', action='store_true', help='Force full rebuild of existing wiki file (use with --wiki)')
@@ -270,32 +276,45 @@ Environment Variables:
 
     logger.info("Claude Chat Manager starting...")
 
-    # Check if Claude directory exists
-    if not config.claude_projects_dir.exists():
-        print_colored(f"❌ Claude projects directory not found: {config.claude_projects_dir}", Colors.RED)
-        print("Make sure you have Claude Desktop installed and have created projects.")
-        print("\nYou can set a custom directory with:")
-        print("  export CLAUDE_PROJECTS_DIR=/path/to/your/projects")
-        sys.exit(1)
+    # Convert source argument to ChatSource enum
+    source_filter = None
+    if args.source == 'claude':
+        source_filter = ChatSource.CLAUDE_DESKTOP
+    elif args.source == 'kiro':
+        source_filter = ChatSource.KIRO_IDE
+    elif args.source == 'all':
+        source_filter = None  # None means all sources
+
+    # Check if Claude directory exists (only if we're scanning Claude)
+    if (source_filter is None or source_filter == ChatSource.CLAUDE_DESKTOP):
+        if not config.claude_projects_dir.exists():
+            print_colored(f"❌ Claude projects directory not found: {config.claude_projects_dir}", Colors.RED)
+            print("Make sure you have Claude Desktop installed and have created projects.")
+            print("\nYou can set a custom directory with:")
+            print("  export CLAUDE_PROJECTS_DIR=/path/to/your/projects")
+            if source_filter == ChatSource.CLAUDE_DESKTOP:
+                sys.exit(1)
+            else:
+                print("\nContinuing with other sources...")
 
     # Handle command line arguments
     try:
         if args.list:
-            display_projects_list()
+            display_projects_list(source_filter)
         elif args.search:
-            display_search_results(args.search)
+            display_search_results(args.search, source_filter)
         elif args.content:
-            display_content_search(args.content)
+            display_content_search(args.content, source_filter)
         elif args.recent is not None:
-            display_recent_projects(args.recent)
+            display_recent_projects(args.recent, source_filter)
         elif args.project:
             # Browse specific project
-            project_path = find_project_by_name(args.project)
+            project_info = find_project_by_name(args.project, source_filter)
 
-            if project_path and project_path.exists():
+            if project_info and project_info.path.exists():
                 # Handle sanitization preview mode
                 if args.sanitize_preview:
-                    perform_sanitize_preview(args, project_path)
+                    perform_sanitize_preview(args, project_info.path)
                     sys.exit(0)
 
                 # Handle wiki format specially
@@ -338,7 +357,7 @@ Environment Variables:
                     # Export wiki (pass mode for update/rebuild logic)
                     wiki_output.parent.mkdir(parents=True, exist_ok=True)
                     export_project_wiki(
-                        project_path,
+                        project_info.path,
                         wiki_output,
                         use_llm,
                         api_key,
@@ -386,7 +405,7 @@ Environment Variables:
                     # Create directory and export
                     export_dir.mkdir(parents=True, exist_ok=True)
                     exported_files = export_project_chats(
-                        project_path,
+                        project_info.path,
                         export_dir,
                         args.format,
                         sanitize=sanitize_enabled
@@ -397,7 +416,7 @@ Environment Variables:
                         print(f"   {file.name} ({size/1024:.1f}KB)")
                 else:
                     # Interactive mode
-                    browse_project_interactive(project_path)
+                    browse_project_interactive(project_info)
             else:
                 print_colored(f"Project not found: {args.project}", Colors.RED)
                 print("Available projects:")
@@ -405,7 +424,7 @@ Environment Variables:
                 sys.exit(1)
         else:
             # Interactive browser
-            interactive_browser()
+            interactive_browser(source_filter)
 
     except KeyboardInterrupt:
         print()
