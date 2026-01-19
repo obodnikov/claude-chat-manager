@@ -99,14 +99,20 @@ claude-chat-manager/
 │   └── wiki_parser.py          # Parse existing wiki files (~200 lines)
 │
 ├── tests/                      # Unit tests (pytest)
+│   ├── test_cli_sanitization.py    # CLI sanitization integration tests
+│   ├── test_cli_source_flag.py     # CLI --source flag tests
 │   ├── test_config.py
+│   ├── test_config_env.py          # Environment variable config tests
 │   ├── test_exceptions.py
+│   ├── test_file_discovery_integration.py  # File discovery integration tests
 │   ├── test_formatters.py
-│   ├── test_kiro_parser.py     # Kiro parser unit tests
-│   ├── test_kiro_projects.py   # Kiro projects unit tests
-│   ├── test_kiro_properties.py # Kiro property-based tests
+│   ├── test_interactive_browser.py # Interactive browser tests
+│   ├── test_kiro_export.py         # Kiro export integration tests
+│   ├── test_kiro_parser.py         # Kiro parser unit tests
+│   ├── test_kiro_projects.py       # Kiro projects unit tests
+│   ├── test_kiro_properties.py     # Kiro property-based tests
 │   ├── test_llm_client.py
-│   ├── test_models.py          # Model tests including ChatSource
+│   ├── test_models.py              # Model tests including ChatSource
 │   ├── test_sanitizer.py
 │   ├── test_sanitize_chats.py
 │   ├── test_wiki_generator.py
@@ -475,19 +481,19 @@ WIKI_GENERATE_TITLES = os.getenv('WIKI_GENERATE_TITLES') or true
 
 **Core Data Layer:**
 - `parser.py` - JSONL parsing (well-tested, stable format)
-- `models.py` - Data classes (simple, unlikely to change)
-- `projects.py` - Project discovery (stable filesystem operations)
+- `models.py` - Data classes with ChatSource enum (well-tested)
+- `projects.py` - Project discovery with multi-source support (stable)
 
 **Kiro Data Layer:**
-- `kiro_parser.py` - Kiro JSON parsing (well-tested, stable format)
-- `kiro_projects.py` - Workspace discovery (stable filesystem operations)
+- `kiro_parser.py` - Kiro JSON parsing with execution log enrichment (322 tests passing)
+- `kiro_projects.py` - Workspace/session discovery (property-tested)
 
 **Formatting:**
-- `formatters.py` - Message formatting (mature, well-tested)
+- `formatters.py` - Message formatting with structured content support (mature)
 - `colors.py` - ANSI colors (complete, no changes needed)
 
 **Configuration:**
-- `config.py` - Environment variable loading (stable pattern)
+- `config.py` - Environment variable loading with Kiro settings (stable)
 
 **Guidance:** Safe to use as-is. Changes should be additive only.
 
@@ -725,7 +731,7 @@ c) Refactor existing code to make room?"
 ---
 
 
-**Document Version:** 1.1  
-**Last Updated:** 2026-01-15  
-**Total Lines:** ~400  
-**Status:** ✅ Complete (Updated with Kiro IDE support)
+**Document Version:** 1.2  
+**Last Updated:** 2026-01-19  
+**Total Lines:** ~410  
+**Status:** ✅ Complete (Kiro IDE support fully tested)
