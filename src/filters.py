@@ -143,7 +143,10 @@ class ChatFilter:
         if not self.filter_system_tags:
             return text
 
-        # Known system tag patterns
+        # Handle steering-reminder blocks specially - extract file names and summarize
+        cleaned = self._summarize_steering_reminders(text)
+
+        # Known system tag patterns to remove completely
         system_patterns = [
             r'<ide_opened_file>.*?</ide_opened_file>',
             r'<system-reminder>.*?</system-reminder>',
@@ -152,7 +155,6 @@ class ChatFilter:
         ]
 
         # Remove each pattern
-        cleaned = text
         for pattern in system_patterns:
             cleaned = re.sub(pattern, '', cleaned, flags=re.DOTALL)
 
@@ -160,6 +162,47 @@ class ChatFilter:
         cleaned = re.sub(r'\n\n\n+', '\n\n', cleaned)  # Max 2 newlines
         cleaned = cleaned.strip()
 
+        return cleaned
+
+    def _summarize_steering_reminders(self, text: str) -> str:
+        """Replace steering-reminder blocks with a compact summary.
+
+        Extracts steering file names from the block content and replaces
+        the full content with a brief mention.
+
+        Args:
+            text: Text that may contain steering-reminder blocks.
+
+        Returns:
+            Text with steering blocks replaced by summaries.
+        """
+        # Pattern to match steering-reminder blocks
+        steering_pattern = r'<steering-reminder>(.*?)</steering-reminder>'
+        
+        # Find all steering blocks
+        matches = list(re.finditer(steering_pattern, text, flags=re.DOTALL))
+        
+        if not matches:
+            return text
+        
+        # Extract unique file names from all blocks
+        all_file_names = set()
+        for match in matches:
+            content = match.group(1)
+            # File names appear as "filename.md:" at the start of lines
+            file_names = re.findall(r'^([a-zA-Z0-9_-]+\.md):', content, re.MULTILINE)
+            all_file_names.update(file_names)
+        
+        # Remove all steering-reminder blocks
+        cleaned = re.sub(steering_pattern, '', text, flags=re.DOTALL)
+        
+        # Add a single summary at the beginning if we found file names
+        if all_file_names:
+            sorted_names = sorted(all_file_names)
+            summary = f'*[Steering files included: {", ".join(sorted_names)}]*\n\n'
+            # Only add summary once, at the start of the cleaned text
+            cleaned = summary + cleaned.strip()
+        
         return cleaned
 
     def clean_user_message(self, text: str) -> Optional[str]:
