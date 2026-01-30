@@ -398,6 +398,66 @@ python3 sanitize-chats.py my-chat.md --preview
 
 📚 **Full Documentation:** See [docs/SANITIZATION.md](docs/SANITIZATION.md) for complete guide, patterns, and best practices.
 
+## 🔄 Chat Merge Utility (NEW!)
+
+Intelligently merge exported chat files from different sources (e.g., multiple computers) while avoiding duplicates and handling incomplete conversations.
+
+### The Problem
+
+When working across multiple machines:
+- Same conversations get different filenames (LLM-generated)
+- Some conversations are incomplete (continued on another machine)
+- Manual deduplication is tedious and error-prone
+
+### The Solution
+
+```bash
+# Merge new exports into your project docs
+python3 merge-chats.py \
+  --source ~/exports/MacBook-Air-...-20260130_195936 \
+  --target ./docs/chats/ \
+  --preview
+```
+
+### How It Works
+
+- **Content Fingerprinting**: Identifies conversations by content, not filename
+- **Smart Detection**: Finds duplicates and incomplete versions automatically
+- **Safe Merging**: Preview, interactive, or automatic modes with backups
+
+### Quick Start
+
+```bash
+# 1. Preview what would be merged (dry-run)
+python3 merge-chats.py --source NEW_EXPORTS/ --target docs/chats/ --preview
+
+# 2. Interactive mode - review each decision
+python3 merge-chats.py --source NEW_EXPORTS/ --target docs/chats/ --interactive
+
+# 3. Automatic merge with backup and report
+python3 merge-chats.py --source NEW_EXPORTS/ --target docs/chats/ --auto --backup --report merge.md
+```
+
+### Merge Actions
+
+| Action | Description |
+|--------|-------------|
+| ✅ **NEW** | No match found - copy to target |
+| 🔄 **UPDATE** | Source has more messages - replace incomplete version |
+| ⏭️ **SKIP** | Identical conversation already exists |
+| ⚠️ **REVIEW** | Manual check needed (similarity unclear) |
+
+### Configuration
+
+```bash
+--similarity 0.8              # Match threshold (0.0-1.0, default: 0.8)
+--fingerprint-messages 3      # Message pairs for fingerprint (default: 3)
+--backup                      # Create .md.backup before overwriting
+--report FILE                 # Generate detailed merge report
+```
+
+📚 **Full Documentation:** See [docs/MERGE_CHATS.md](docs/MERGE_CHATS.md) for complete guide, examples, and workflows.
+
 ## 🎮 Navigation Controls
 
 ### Project Browser
@@ -1021,6 +1081,9 @@ This tool is provided as-is for personal use with Claude Desktop chat histories.
 ## 🔗 Related Tools
 
 - **Claude Desktop**: The official Claude application
+- **Kiro IDE**: Alternative Claude-powered IDE with chat support
+- **merge-chats.py**: Included utility for merging exports from multiple sources
+- **sanitize-chats.py**: Included utility for post-processing sensitive data
 - **jq**: Command-line JSON processor for manual JSONL inspection
 - **less**: Unix pager that inspired the navigation system
 - **grep**: For additional content searching capabilities
@@ -1031,12 +1094,15 @@ This tool is provided as-is for personal use with Claude Desktop chat histories.
 
 - **Version**: 2.3.0
 - **Python**: 3.9+
-- **Modules**: 17 source modules (including kiro_parser.py, kiro_projects.py)
-- **Tests**: 322 unit tests (100% passing)
+- **Modules**: 18 source modules (including chat_merger.py, kiro_parser.py, kiro_projects.py)
+- **Tests**: 342+ unit tests (100% passing)
 - **Coverage**: Core modules 52-100%
 - **Type Hints**: 100% coverage
 - **Documentation**: Complete with examples and enhancement guide
 - **Chat Sources**: Claude Desktop + Kiro IDE
+- **Utilities**:
+  - **merge-chats.py** - Intelligent chat file merging (NEW!)
+  - **sanitize-chats.py** - Sensitive data sanitization
 - **Features**: 5 export formats including:
   - Enhanced book mode with intelligent filtering
   - Single-chat export with action menu
