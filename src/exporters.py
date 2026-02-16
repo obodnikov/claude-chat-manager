@@ -1097,7 +1097,35 @@ def export_single_chat(
         # Load chat data and determine source
         # For single chat export, infer workspace_dir from file location
         workspace_dir = chat_file.parent
-        chat_data, source, errors = _load_chat_data(chat_file, workspace_dir=workspace_dir)
+        
+        # Detect source to determine if we need Kiro execution log enrichment
+        detected_source = _detect_chat_source(chat_file)
+        
+        # For Kiro book/wiki exports, use execution logs for full conversations
+        # (same approach as export_kiro_workspace)
+        use_execution_logs = (
+            detected_source == ChatSource.KIRO_IDE and format_type in ('book', 'wiki')
+        )
+        kiro_data_dir = None
+        execution_log_index = None
+        
+        if use_execution_logs:
+            # Infer kiro_data_dir: workspace_dir is workspace-sessions/<encoded-path>
+            # kiro_data_dir is the grandparent kiro.kiroagent directory
+            kiro_data_dir = workspace_dir.parent.parent
+            if kiro_data_dir.exists():
+                execution_log_index = build_execution_log_index(kiro_data_dir)
+            else:
+                logger.warning(f"Inferred kiro_data_dir does not exist: {kiro_data_dir}")
+                kiro_data_dir = None
+        
+        chat_data, source, errors = _load_chat_data(
+            chat_file,
+            workspace_dir=workspace_dir,
+            execution_log_index=execution_log_index,
+            use_execution_logs=use_execution_logs,
+            kiro_data_dir=kiro_data_dir
+        )
         
         # Log enrichment errors using standardized logging
         _log_enrichment_errors(errors, chat_file.name)
@@ -1138,8 +1166,19 @@ def export_single_chat(
 
         output_file = output_dir / f"{filename}.md"
 
-        # Export the file
-        export_chat_to_file(chat_file, output_file, format_type)
+        # Write content directly using already-loaded (and enriched) chat_data
+        # instead of calling export_chat_to_file which would re-load without enrichment
+        if format_type == 'book':
+            content = export_chat_book(chat_data)
+        elif format_type == 'markdown':
+            content = export_chat_markdown(chat_data)
+        elif format_type == 'pretty':
+            content = export_chat_pretty(chat_data)
+        else:
+            raise ExportError(f"Unknown format type: {format_type}")
+
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(content)
 
         logger.info(f"Exported single {source.value} chat to {output_file}")
         return output_file
