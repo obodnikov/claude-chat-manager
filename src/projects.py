@@ -77,6 +77,7 @@ def list_all_projects(source_filter: Optional[ChatSource] = None) -> List[Projec
     # Determine which sources to scan
     scan_claude = source_filter is None or source_filter == ChatSource.CLAUDE_DESKTOP
     scan_kiro = source_filter is None or source_filter == ChatSource.KIRO_IDE
+    scan_codex = source_filter is None or source_filter == ChatSource.CODEX
     
     # Scan Claude Desktop projects
     if scan_claude:
@@ -121,6 +122,34 @@ def list_all_projects(source_filter: Optional[ChatSource] = None) -> List[Projec
         else:
             logger.debug("Kiro data directory not found, skipping Kiro projects")
     
+    # Scan Codex CLI projects
+    if scan_codex:
+        if config.validate_codex_directory():
+            try:
+                from .codex_projects import discover_codex_workspaces
+                codex_workspaces = discover_codex_workspaces(config.codex_data_dir)
+
+                for workspace in codex_workspaces:
+                    projects.append(ProjectInfo(
+                        name=workspace.workspace_name,
+                        path=config.codex_data_dir / 'sessions',
+                        file_count=workspace.session_count,
+                        total_messages=0,
+                        last_modified=workspace.last_modified,
+                        sort_timestamp=None,
+                        source=ChatSource.CODEX,
+                        workspace_path=workspace.workspace_path,
+                        session_ids=[str(s.file_path) for s in workspace.sessions]
+                    ))
+                logger.info(
+                    f"Found {len([p for p in projects if p.source == ChatSource.CODEX])} "
+                    f"Codex CLI projects"
+                )
+            except Exception as e:
+                logger.warning(f"Error discovering Codex projects: {e}")
+        else:
+            logger.debug("Codex data directory not found, skipping Codex projects")
+    
     if not projects:
         raise ProjectNotFoundError("No projects found in any configured source")
     
@@ -142,6 +171,7 @@ def find_project_by_name(project_name: str, source_filter: Optional[ChatSource] 
     # None means search all sources (consistent with list_all_projects)
     search_claude = source_filter is None or source_filter == ChatSource.CLAUDE_DESKTOP
     search_kiro = source_filter is None or source_filter == ChatSource.KIRO_IDE
+    search_codex = source_filter is None or source_filter == ChatSource.CODEX
     
     # Search Claude Desktop projects
     if search_claude:
@@ -205,6 +235,43 @@ def find_project_by_name(project_name: str, source_filter: Optional[ChatSource] 
             except Exception as e:
                 logger.warning(f"Error searching Kiro projects: {e}")
     
+    # Search Codex CLI projects
+    if search_codex:
+        if config.validate_codex_directory():
+            try:
+                from .codex_projects import discover_codex_workspaces
+                codex_workspaces = discover_codex_workspaces(config.codex_data_dir)
+
+                for workspace in codex_workspaces:
+                    if workspace.workspace_name.lower() == project_name.lower():
+                        logger.debug(f"Found Codex project: {workspace.workspace_path}")
+                        return ProjectInfo(
+                            name=workspace.workspace_name,
+                            path=config.codex_data_dir / 'sessions',
+                            file_count=workspace.session_count,
+                            total_messages=0,
+                            last_modified=workspace.last_modified,
+                            source=ChatSource.CODEX,
+                            workspace_path=workspace.workspace_path,
+                            session_ids=[str(s.file_path) for s in workspace.sessions]
+                        )
+
+                    workspace_basename = Path(workspace.workspace_path).name
+                    if workspace_basename.lower() == project_name.lower():
+                        logger.debug(f"Found Codex project by path: {workspace.workspace_path}")
+                        return ProjectInfo(
+                            name=workspace.workspace_name,
+                            path=config.codex_data_dir / 'sessions',
+                            file_count=workspace.session_count,
+                            total_messages=0,
+                            last_modified=workspace.last_modified,
+                            source=ChatSource.CODEX,
+                            workspace_path=workspace.workspace_path,
+                            session_ids=[str(s.file_path) for s in workspace.sessions]
+                        )
+            except Exception as e:
+                logger.warning(f"Error searching Codex projects: {e}")
+    
     logger.warning(f"Project not found: {project_name}")
     return None
 
@@ -258,16 +325,29 @@ def get_recent_projects(count: int = 10, source_filter: Optional[ChatSource] = N
         return []
 
 
-def get_project_chat_files(project_path: Path, source: ChatSource = ChatSource.CLAUDE_DESKTOP) -> List[Path]:
+def get_project_chat_files(
+    project_path: Path,
+    source: ChatSource = ChatSource.CLAUDE_DESKTOP,
+    session_ids: Optional[List[str]] = None
+) -> List[Path]:
     """Get all chat files in a project based on source type.
 
     Args:
         project_path: Path to the project directory.
-        source: Chat source type (Claude Desktop or Kiro IDE).
+        source: Chat source type (Claude Desktop, Kiro IDE, or Codex CLI).
+        session_ids: For Codex: list of absolute file path strings.
 
     Returns:
         Sorted list of chat file paths.
     """
+    if source == ChatSource.CODEX:
+        # Codex sessions are stored as absolute paths in session_ids
+        if session_ids:
+            chat_files = [Path(p) for p in session_ids if Path(p).exists()]
+            chat_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+            return chat_files
+        return []
+
     if not project_path.exists() or not project_path.is_dir():
         logger.error(f"Invalid project path: {project_path}")
         return []

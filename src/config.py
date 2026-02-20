@@ -73,6 +73,7 @@ class Config:
         """Initialize configuration with default values."""
         self._claude_dir: Optional[Path] = None
         self._kiro_dir: Optional[Path] = None
+        self._codex_dir: Optional[Path] = None
         self._load_config()
 
     def _load_config(self) -> None:
@@ -97,6 +98,19 @@ class Config:
             # Default location based on OS
             self._kiro_dir = self._get_default_kiro_dir()
             logger.debug(f"Using default Kiro directory: {self._kiro_dir}")
+
+        # Codex data directory
+        codex_dir_env = os.getenv('CODEX_DATA_DIR')
+        if codex_dir_env:
+            self._codex_dir = Path(codex_dir_env)
+            logger.info(f"Using CODEX_DATA_DIR from environment: {self._codex_dir}")
+        else:
+            codex_home = os.getenv('CODEX_HOME')
+            if codex_home:
+                self._codex_dir = Path(codex_home)
+            else:
+                self._codex_dir = Path.home() / '.codex'
+            logger.debug(f"Using default Codex directory: {self._codex_dir}")
 
     def _get_default_kiro_dir(self) -> Path:
         """Get OS-specific default Kiro data directory.
@@ -155,6 +169,33 @@ class Config:
         return self._kiro_dir
 
     @property
+    def codex_data_dir(self) -> Path:
+        """Get the Codex data directory path.
+
+        Returns:
+            Path to Codex data directory (~/.codex by default).
+        """
+        return self._codex_dir
+
+    def validate_codex_directory(self) -> bool:
+        """Validate that the Codex data directory exists.
+
+        Returns:
+            True if directory exists and contains a sessions subdirectory.
+        """
+        if not self._codex_dir.exists():
+            logger.warning(f"Codex data directory not found: {self._codex_dir}")
+            return False
+        if not self._codex_dir.is_dir():
+            logger.warning(f"Codex data path is not a directory: {self._codex_dir}")
+            return False
+        sessions_dir = self._codex_dir / 'sessions'
+        if not sessions_dir.exists():
+            logger.warning(f"Codex sessions directory not found: {sessions_dir}")
+            return False
+        return True
+
+    @property
     def chat_source_filter(self) -> Optional[ChatSource]:
         """Get configured chat source filter.
         
@@ -162,6 +203,7 @@ class Config:
             ChatSource enum value or None for all sources.
             - ChatSource.CLAUDE_DESKTOP: Show only Claude Desktop chats
             - ChatSource.KIRO_IDE: Show only Kiro IDE chats
+            - ChatSource.CODEX: Show only Codex CLI chats
             - None: Show all sources
         """
         source = os.getenv('CHAT_SOURCE', 'claude').lower()
@@ -169,6 +211,8 @@ class Config:
             return ChatSource.CLAUDE_DESKTOP
         elif source == 'kiro':
             return ChatSource.KIRO_IDE
+        elif source == 'codex':
+            return ChatSource.CODEX
         elif source == 'all':
             return None  # None means show all sources
         else:

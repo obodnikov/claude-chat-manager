@@ -192,8 +192,10 @@ Examples:
   %(prog)s "my-project" --wiki wiki.md --rebuild  # Force full rebuild of existing wiki
   %(prog)s -c "update checker"                    # Search chat content
   %(prog)s --source kiro                          # List Kiro IDE projects only
-  %(prog)s --source all                           # List both Claude and Kiro projects
+  %(prog)s --source codex                         # List Codex CLI projects
+  %(prog)s --source all                           # List all sources (Claude + Kiro + Codex)
   %(prog)s --source kiro "my-project"             # Browse Kiro project
+  %(prog)s --source codex "my-project"            # Browse Codex project
 
 Sanitization Examples:
   %(prog)s "my-project" -f book -o exports/ --sanitize            # Enable sanitization
@@ -225,8 +227,8 @@ Environment Variables:
                         default='pretty', help='Output format (default: pretty, book=clean markdown without timestamps, wiki=AI-generated single page)')
     parser.add_argument('-o', '--output', metavar='FILE', type=Path, help='Save output to file')
     parser.add_argument('-c', '--content', metavar='TERM', help='Search for content within chats')
-    parser.add_argument('--source', choices=['claude', 'kiro', 'all'],
-                        default='claude', help='Chat source to use: claude (default), kiro, or all')
+    parser.add_argument('--source', choices=['claude', 'kiro', 'codex', 'all'],
+                        default='claude', help='Chat source to use: claude (default), kiro, codex, or all')
     parser.add_argument('--wiki', metavar='FILE', type=Path, help='Generate wiki page from all project chats (shortcut for -f wiki -o FILE)')
     parser.add_argument('--update', action='store_true', help='Update existing wiki file with new chats (use with --wiki)')
     parser.add_argument('--rebuild', action='store_true', help='Force full rebuild of existing wiki file (use with --wiki)')
@@ -282,6 +284,8 @@ Environment Variables:
         source_filter = ChatSource.CLAUDE_DESKTOP
     elif args.source == 'kiro':
         source_filter = ChatSource.KIRO_IDE
+    elif args.source == 'codex':
+        source_filter = ChatSource.CODEX
     elif args.source == 'all':
         source_filter = None  # None means all sources
 
