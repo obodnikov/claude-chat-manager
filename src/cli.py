@@ -21,7 +21,7 @@ from .projects import (
     get_project_chat_files
 )
 from .search import search_chat_content
-from .parser import parse_jsonl_file, count_messages_in_file
+from .parser import parse_jsonl_file, count_messages_in_file, count_codex_messages_in_file
 from .exporters import (
     export_chat_pretty,
     export_chat_to_file,
@@ -287,7 +287,10 @@ def browse_project_interactive(project_info: ProjectInfo) -> bool:
                 size = file_path.stat().st_size
                 size_str = f"{size/1024:.1f}KB" if size > 1024 else f"{size}B"
                 modified = datetime.fromtimestamp(file_path.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                msg_count = count_messages_in_file(file_path)
+                if project_info.source == ChatSource.CODEX:
+                    msg_count = count_codex_messages_in_file(file_path)
+                else:
+                    msg_count = count_messages_in_file(file_path)
 
                 print(f"{i:2d}) {filename:<{max_filename_len}}  {size_str:>9}  {msg_count:>6} msgs {modified}")
             except Exception:

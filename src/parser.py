@@ -105,3 +105,37 @@ def count_messages_in_file(file_path: Path) -> int:
     except Exception as e:
         logger.error(f"Error counting messages in {file_path}: {e}")
         return 0
+
+def count_codex_messages_in_file(file_path: Path) -> int:
+    """Count user and assistant messages in a Codex rollout JSONL file.
+
+    Only counts response_item entries with type 'message' and
+    role 'user' or 'assistant', matching the export filtering logic.
+
+    Args:
+        file_path: Path to the Codex rollout JSONL file.
+
+    Returns:
+        Number of conversation messages (user + assistant only).
+    """
+    count = 0
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    if (data.get('type') == 'response_item'
+                            and isinstance(data.get('payload'), dict)
+                            and data['payload'].get('type') == 'message'
+                            and data['payload'].get('role') in ('user', 'assistant')):
+                        count += 1
+                except (json.JSONDecodeError, KeyError):
+                    continue
+    except Exception as e:
+        logger.error(f"Error counting Codex messages in {file_path}: {e}")
+        return 0
+    return count
+
