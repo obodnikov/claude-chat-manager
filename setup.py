@@ -9,7 +9,7 @@ long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists
 
 setup(
     name="claude-chat-manager",
-    version="2.0.0",
+    version="3.0.0",
     author="Claude Chat Manager Team",
     description="A tool to browse and export Claude Desktop chat files",
     long_description=long_description,

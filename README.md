@@ -2,7 +2,7 @@
 
 A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat files with an intuitive interface and Unix `less`-like paging for smooth reading experience.
 
-**Version 2.3.0** - Now with Kiro IDE support! Browse and export chats from both Claude Desktop and Kiro IDE.
+**Version 3.0.0** - Now with Codex CLI and Kiro IDE support! Browse and export chats from Claude Desktop, Kiro IDE, and OpenAI Codex CLI.
 
 ## ✨ Features
 
@@ -16,6 +16,7 @@ A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat f
 - 🎯 **Batch Export** - Export entire projects to organized Markdown files
 - 🎨 **Colored Output** - Beautiful terminal interface with syntax highlighting
 - ⚡ **Fast Performance** - Efficient parsing of large chat histories
+- 🔧 **Codex CLI Support** - Browse and export OpenAI Codex CLI sessions
 - 🔄 **Easy Navigation** - Intuitive menu system with back buttons
 
 ## 🚀 Installation
@@ -628,6 +629,21 @@ Kiro IDE stores chat sessions in:
 
 Each workspace has a base64-encoded folder containing `sessions.json` and individual `.json` chat files.
 
+### Codex CLI
+Codex CLI stores session rollout files in:
+- **All platforms**: `~/.codex/sessions/` (configurable via `CODEX_HOME` env var)
+
+Sessions are organized by date (`YYYY/MM/DD/`) with JSONL rollout files:
+```
+~/.codex/sessions/
+└── 2026/
+    └── 02/
+        └── 20/
+            └── rollout-2026-02-20T09-00-00-abc123.jsonl
+```
+
+Each JSONL file contains a `session_meta` first line with `cwd` (working directory), which is used to group sessions into projects.
+
 ## 🔄 Kiro IDE Support (NEW!)
 
 Claude Chat Manager now supports Kiro IDE chat files alongside Claude Desktop, providing a unified interface for all your AI conversations.
@@ -656,14 +672,15 @@ Use the `--source` (or `-s`) flag to control which chat sources to display:
 |------|-------------|
 | `--source claude` | Claude Desktop only (default) |
 | `--source kiro` | Kiro IDE only |
-| `--source all` | Both sources combined |
+| `--source codex` | Codex CLI only |
+| `--source all` | All sources combined |
 
 ### Configuration
 
 Set the default source in your `.env` file:
 
 ```bash
-# Default chat source (claude, kiro, or all)
+# Default chat source (claude, kiro, codex, or all)
 CHAT_SOURCE=claude
 
 # Custom Kiro data directory (optional)
@@ -683,7 +700,7 @@ The tool auto-detects Kiro's data directory based on your OS:
 ### Features with Kiro
 
 All existing features work with Kiro chats:
-- ✅ Interactive browsing with source indicators `[Claude]` / `[Kiro]`
+- ✅ Interactive browsing with source indicators `[Claude]` / `[Kiro]` / `[Codex]`
 - ✅ All export formats (pretty, markdown, book, wiki)
 - ✅ Content search across both sources
 - ✅ Batch export of workspaces
@@ -727,19 +744,98 @@ Common scenarios:
 
 **Note:** Execution logs are stored in hash-named subdirectories within the workspace. The tool scans these directories automatically to build an index for efficient lookups.
 
+## 🔧 Codex CLI Support (NEW!)
+
+Claude Chat Manager now supports OpenAI Codex CLI sessions as a third chat source, providing a unified interface for all your AI coding conversations.
+
+### Quick Start with Codex
+
+```bash
+# List Codex projects only
+python3 claude-chat-manager.py --source codex
+
+# List all sources (Claude + Kiro + Codex)
+python3 claude-chat-manager.py --source all
+
+# Export a Codex project
+python3 claude-chat-manager.py --source codex "My Project" -f book -o exports/
+
+# Search across Codex sessions
+python3 claude-chat-manager.py --source codex -c "database migration"
+```
+
+### How Codex Projects Work
+
+Unlike Claude Desktop (project folders) and Kiro IDE (workspace sessions), Codex CLI organizes sessions by date. The tool groups sessions by their working directory (`cwd`) to form logical projects:
+
+```
+~/.codex/sessions/
+└── 2026/02/20/
+    ├── rollout-2026-02-20T09-00-00-abc123.jsonl  (cwd: /home/user/my-app)
+    └── rollout-2026-02-20T14-30-00-def456.jsonl  (cwd: /home/user/my-app)
+```
+
+Both rollout files above share the same `cwd`, so they appear as one project: "My App".
+
+### Configuration
+
+Set Codex options in your `.env` file:
+
+```bash
+# Custom Codex data directory (default: ~/.codex)
+CODEX_DATA_DIR=/path/to/custom/codex/data
+
+# Or use the standard Codex environment variable
+CODEX_HOME=/path/to/custom/codex
+
+# Default source filter
+CHAT_SOURCE=codex
+```
+
+### Codex Data Directory
+
+The tool reads from `~/.codex/sessions/` by default (or `$CODEX_HOME/sessions/`). Override with `CODEX_DATA_DIR` in `.env`.
+
+### Features with Codex
+
+All existing features work with Codex sessions:
+- ✅ Interactive browsing with `[Codex]` source indicator
+- ✅ All export formats (pretty, markdown, book, wiki)
+- ✅ Content search across sessions
+- ✅ Batch export of projects
+- ✅ Sensitive data sanitization
+- ✅ Smart filtering of trivial chats
+
+### Codex-Specific Handling
+
+- **JSONL Rollout Format**: Parses `session_meta` and `response_item` events from rollout files
+- **Content Normalization**: Handles Responses API content arrays (`input_text`, `output_text`)
+- **Project Grouping**: Sessions sharing the same `cwd` are grouped into one project
+- **Session Metadata**: Extracts model name, git branch, CLI version, and timestamps
+- **Smart Naming**: Project names derived from the working directory path
+
 ## 🛠️ What's New
 
-### v2.3.0 - Kiro IDE Support (January 2026)
+### v3.0.0 - Codex CLI & Kiro IDE Support (February 2026)
 
 **New Features:**
+- 🔧 **Codex CLI Support**: Browse and export OpenAI Codex CLI sessions as a third chat source
 - 🔄 **Kiro IDE Support**: Browse and export Kiro IDE chat sessions alongside Claude Desktop
-- 🎯 **Source Selection**: `--source` flag to filter by claude, kiro, or all
-- 📁 **Unified Listing**: Combined project view with source indicators `[Claude]` / `[Kiro]`
-- 🔧 **Structured Content**: Automatic handling of Kiro's array-based message format
+- 🎯 **Source Selection**: `--source` flag to filter by claude, kiro, codex, or all
+- 📁 **Unified Listing**: Combined project view with source indicators `[Claude]` / `[Kiro]` / `[Codex]`
+- 🔧 **Structured Content**: Automatic handling of Kiro's array-based and Codex's JSONL rollout formats
 - 🖼️ **Image Indicators**: `[Image]` markers for image references in exports
-- ⚙️ **Configuration**: `KIRO_DATA_DIR` and `CHAT_SOURCE` environment variables
+- ⚙️ **Configuration**: `KIRO_DATA_DIR`, `CODEX_DATA_DIR`, and `CHAT_SOURCE` environment variables
 
-**Technical Details:**
+**Codex CLI Technical Details:**
+- New `codex_parser.py` module for parsing Codex JSONL rollout files
+- New `codex_projects.py` module for project discovery by `cwd` grouping
+- Session metadata extraction (model, git branch, CLI version)
+- Content normalization from Responses API format (input_text, output_text)
+- Filters `response_item` events, extracts `message` items only
+- Date-organized session discovery (`~/.codex/sessions/YYYY/MM/DD/`)
+
+**Kiro IDE Technical Details:**
 - New `kiro_parser.py` module for parsing Kiro `.chat` JSON files
 - New `kiro_projects.py` module for workspace and session discovery
 - Extended data models with `ChatSource` enum
@@ -1029,24 +1125,24 @@ This tool is provided as-is for personal use with Claude Desktop chat histories.
 
 ## 🎯 Project Stats
 
-- **Version**: 2.3.0
+- **Version**: 3.0.0
 - **Python**: 3.9+
-- **Modules**: 17 source modules (including kiro_parser.py, kiro_projects.py)
-- **Tests**: 322 unit tests (100% passing)
+- **Modules**: 19 source modules
+- **Tests**: 448 unit tests (100% passing)
 - **Coverage**: Core modules 52-100%
 - **Type Hints**: 100% coverage
 - **Documentation**: Complete with examples and enhancement guide
-- **Chat Sources**: Claude Desktop + Kiro IDE
+- **Chat Sources**: Claude Desktop + Kiro IDE + Codex CLI
 - **Features**: 5 export formats including:
   - Enhanced book mode with intelligent filtering
   - Single-chat export with action menu
   - Machine-hostname-based directory naming
   - AI-powered wiki with update/rebuild capabilities
   - Shared filtering architecture across modes
-  - Multi-source support (Claude Desktop + Kiro IDE)
+  - Multi-source support (Claude Desktop + Kiro IDE + Codex CLI)
 
 ---
 
 **Made with ❤️ for the Claude community**
 
-*Version 2.3 - Now with Kiro IDE support!*
+*Version 3.0 - Claude Desktop, Kiro IDE, and Codex CLI support!*
