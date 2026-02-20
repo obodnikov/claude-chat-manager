@@ -54,17 +54,17 @@ This document serves as the **architectural source of truth** for Claude Chat Ma
     ┌────┴────────────────────────────────────────────────┐
     │                                                     │
 ┌───▼────┐  ┌────────┐  ┌────────┐  ┌────────┐  ┌───▼────┐
-│Projects│  │ Parser │  │  Kiro  │  │Display │  │Exporters│
-│        │  │(Claude)│  │ Parser │  │        │  │        │
+│Projects│  │ Parser │  │  Kiro  │  │ Codex  │  │Exporters│
+│        │  │(Claude)│  │ Parser │  │ Parser │  │        │
 └────┬───┘  └───┬────┘  └───┬────┘  └───┬────┘  └───┬────┘
      │          │            │            │            │
      └──────────┴────────────┴────────────┴────────────┘
                           │
-                 ┌────────┴────────┐
-                 │                 │
-            ┌────▼────┐      ┌────▼────┐
-            │Formatters│      │ Models  │
-            └─────────┘      └─────────┘
+              ┌───────────┴───────────┐
+              │           │           │
+         ┌────▼────┐ ┌───▼─────┐ ┌───▼───┐
+         │Formatters│ │ Models  │ │Display│
+         └─────────┘ └─────────┘ └───────┘
 ```
 
 ---
@@ -89,6 +89,8 @@ claude-chat-manager/
 │   ├── formatters.py           # Message formatting, timestamp parsing (~230 lines)
 │   ├── kiro_parser.py          # Kiro IDE .chat file parsing (~200 lines)
 │   ├── kiro_projects.py        # Kiro workspace/session discovery (~250 lines)
+│   ├── codex_parser.py         # Codex CLI JSONL rollout parsing (~200 lines)
+│   ├── codex_projects.py       # Codex project discovery by cwd (~150 lines)
 │   ├── llm_client.py           # OpenRouter API client (~150 lines)
 │   ├── models.py               # Data classes (ProjectInfo, ChatMessage, ChatSource) (~100 lines)
 │   ├── parser.py               # JSONL file parsing (~90 lines)
@@ -111,6 +113,8 @@ claude-chat-manager/
 │   ├── test_kiro_parser.py         # Kiro parser unit tests
 │   ├── test_kiro_projects.py       # Kiro projects unit tests
 │   ├── test_kiro_properties.py     # Kiro property-based tests
+│   ├── test_codex_parser.py        # Codex parser unit tests
+│   ├── test_codex_projects.py      # Codex projects unit tests
 │   ├── test_llm_client.py
 │   ├── test_models.py              # Model tests including ChatSource
 │   ├── test_sanitizer.py
@@ -125,6 +129,7 @@ claude-chat-manager/
 │   ├── SANITIZATION.md         # Sanitization feature guide
 │   ├── SANITIZATION_SPEC.md    # Technical sanitization details
 │   ├── BOOK_MODE_ENHANCEMENTS.md  # Book export features
+│   ├── CODEX_IMPLEMENTATION.md # Codex CLI implementation guide
 │   └── chats/                  # Conversation history (implementation context)
 │
 ├── .env.example                # Configuration template
@@ -145,6 +150,7 @@ claude-chat-manager/
   - Windows: `%APPDATA%\Kiro\User\globalStorage\kiro.kiroagent\workspace-sessions\`
   - macOS: `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/workspace-sessions/`
   - Linux: `~/.config/Kiro/User/globalStorage/kiro.kiroagent/workspace-sessions/`
+- **Codex data source:** `~/.codex/sessions/` (configurable via `CODEX_DATA_DIR` or `CODEX_HOME`)
 - **Config loading:** `.env` file in project root (loaded by `src/config.py`)
 - **Logs:** `logs/claude-chat-manager.log`
 
@@ -227,6 +233,42 @@ The enrichment process:
 
 Errors are logged but don't fail exports - original content is preserved.
 
+### 4.2.2 Data Layer (Codex CLI)
+**Modules:** `codex_parser.py`, `codex_projects.py`
+
+**Responsibilities:**
+- Codex JSONL rollout file parsing
+- Project discovery by scanning `~/.codex/sessions/` recursively
+- Session grouping by `cwd` (working directory)
+- Content normalization from Responses API format
+- Session metadata extraction (model, git branch, CLI version)
+
+**Key Data Classes:**
+- `CodexSessionMeta` - Session metadata (cwd, model, timestamp, cli_version, git_branch)
+- `CodexSession` - Parsed session with metadata and messages
+
+**Key Functions:**
+- `parse_codex_rollout()` - Parse a JSONL rollout file into CodexSession
+- `parse_session_meta()` - Extract session metadata from first JSONL line
+- `extract_codex_messages()` - Convert rollout events to ChatMessage objects
+- `normalize_codex_content()` - Normalize Responses API content arrays to text
+- `discover_codex_sessions()` - Find all rollout files under sessions directory
+- `group_sessions_by_project()` - Group sessions by cwd into ProjectInfo objects
+
+**Codex Data Structure:**
+
+```
+~/.codex/sessions/
+└── YYYY/MM/DD/
+    └── rollout-<timestamp>-<uuid>.jsonl
+```
+
+Each rollout file contains:
+1. First line: `session_meta` event with `cwd`, `model`, `cli_version`, `git` info
+2. Subsequent lines: `response_item` events containing `message` items with role/content
+
+Sessions sharing the same `cwd` are grouped into one logical project.
+
 ### 4.3 Export Engine
 **Modules:** `exporters.py`, `formatters.py`, `filters.py`
 
@@ -235,7 +277,7 @@ Errors are logged but don't fail exports - original content is preserved.
 - Content filtering (trivial chat detection, system tag removal)
 - Batch export to directories
 - Single-chat export with smart filenames
-- Source-aware exports (Claude Desktop and Kiro IDE)
+- Source-aware exports (Claude Desktop, Kiro IDE, and Codex CLI)
 
 **Export Formats:**
 - **Pretty:** Terminal-friendly with colors and icons
@@ -286,25 +328,27 @@ User runs: python claude-chat-manager.py --source all
                     ▼
          ┌──────────────────────┐
          │ Check --source flag  │
-         │ (claude/kiro/all)    │
+         │ (claude/kiro/codex/  │
+         │  all)                │
          └──────────┬───────────┘
                     │
-        ┌───────────┴───────────┐
-        │                       │
-        ▼                       ▼
-┌───────────────┐      ┌───────────────┐
-│ Scan Claude   │      │ Scan Kiro     │
-│ ~/.claude/    │      │ workspace-    │
-│ projects/     │      │ sessions/     │
-└───────┬───────┘      └───────┬───────┘
-        │                       │
-        └───────────┬───────────┘
-                    │
-                    ▼
+        ┌───────────┼───────────┐
+        │           │           │
+        ▼           ▼           ▼
+┌───────────┐ ┌───────────┐ ┌───────────┐
+│Scan Claude│ │ Scan Kiro │ │Scan Codex │
+│~/.claude/ │ │ workspace-│ │~/.codex/  │
+│projects/  │ │ sessions/ │ │sessions/  │
+└─────┬─────┘ └─────┬─────┘ └─────┬─────┘
+      │              │              │
+      └──────────────┼──────────────┘
+                     │
+                     ▼
          ┌──────────────────────┐
          │ Merge & sort projects│
          │ Add source indicators│
-         │ [Claude] / [Kiro]    │
+         │ [Claude]/[Kiro]/     │
+         │ [Codex]              │
          └──────────┬───────────┘
                     │
                     ▼
@@ -315,33 +359,34 @@ User runs: python claude-chat-manager.py --source all
                     │
          User selects project
                     │
-        ┌───────────┴───────────┐
-        │                       │
-        ▼                       ▼
-┌───────────────┐      ┌───────────────┐
-│ Claude:       │      │ Kiro:         │
-│ List *.jsonl  │      │ List sessions │
-│ files         │      │ from JSON     │
-└───────┬───────┘      └───────┬───────┘
-        │                       │
-        └───────────┬───────────┘
-                    │
+        ┌───────────┼───────────┐
+        │           │           │
+        ▼           ▼           ▼
+┌───────────┐ ┌───────────┐ ┌───────────┐
+│ Claude:   │ │ Kiro:     │ │ Codex:    │
+│ List      │ │ List      │ │ List      │
+│ *.jsonl   │ │ sessions  │ │ rollout   │
+│ files     │ │ from JSON │ │ *.jsonl   │
+└─────┬─────┘ └─────┬─────┘ └─────┬─────┘
+      │              │              │
+      └──────────────┼──────────────┘
+                     │
          User selects chat
-                    │
-        ┌───────────┴───────────┐
-        │                       │
-        ▼                       ▼
-┌───────────────┐      ┌───────────────┐
-│ Parse JSONL   │      │ Parse .chat   │
-│ (Claude)      │      │ JSON (Kiro)   │
-└───────┬───────┘      └───────┬───────┘
-        │                       │
-        └───────────┬───────────┘
-                    │
-                    ▼
+                     │
+        ┌────────────┼────────────┐
+        │            │            │
+        ▼            ▼            ▼
+┌───────────┐ ┌───────────┐ ┌───────────┐
+│Parse JSONL│ │Parse .chat│ │Parse JSONL│
+│ (Claude)  │ │JSON (Kiro)│ │ (Codex)   │
+└─────┬─────┘ └─────┬─────┘ └─────┬─────┘
+      │              │              │
+      └──────────────┼──────────────┘
+                     │
+                     ▼
          ┌──────────────────────┐
          │ Normalize content    │
-         │ (Kiro: array→string) │
+         │ (Kiro/Codex→string)  │
          └──────────┬───────────┘
                     │
                     ▼
@@ -359,13 +404,14 @@ User runs: python claude-chat-manager.py "Project" -f book -o exports/
                     ▼
          ┌──────────────────────┐
          │ Find project by name │
-         │ (check both sources) │
+         │ (check all sources)  │
          └──────────┬───────────┘
                     │
                     ▼
          ┌──────────────────────┐
          │ Get chat files       │
-         │ (*.jsonl or *.json)  │
+         │ (*.jsonl or *.json   │
+         │  or rollout *.jsonl) │
          └──────────┬───────────┘
                     │
          For each chat file:
@@ -373,7 +419,7 @@ User runs: python claude-chat-manager.py "Project" -f book -o exports/
                     ▼
          ┌──────────────────────┐
          │ Parse file           │
-         │ (JSONL or Kiro JSON) │
+         │ (JSONL/Kiro/Codex)   │
          └──────────┬───────────┘
                     │
                     ▼
@@ -435,7 +481,11 @@ WIKI_GENERATE_TITLES = os.getenv('WIKI_GENERATE_TITLES') or true
 
 **Kiro IDE Settings:**
 - `KIRO_DATA_DIR` - Custom Kiro data directory (OS-specific default)
-- `CHAT_SOURCE` - Default source filter (claude, kiro, all)
+- `CHAT_SOURCE` - Default source filter (claude, kiro, codex, all)
+
+**Codex CLI Settings:**
+- `CODEX_DATA_DIR` - Custom Codex data directory (default: `~/.codex`)
+- `CODEX_HOME` - Alternative Codex home directory (standard Codex env var)
 
 **LLM Integration:**
 - `OPENROUTER_API_KEY` - API key for title generation
@@ -470,6 +520,7 @@ WIKI_GENERATE_TITLES = os.getenv('WIKI_GENERATE_TITLES') or true
 - **Dependencies:** Minimal (standard library only for core functionality)
 - **Claude Data Location:** `~/.claude/projects/` (Claude Desktop default)
 - **Kiro Data Location:** OS-specific (see Critical Paths section)
+- **Codex Data Location:** `~/.codex/sessions/` (configurable via `CODEX_DATA_DIR` or `CODEX_HOME`)
 - **Executable:** Can be built with PyInstaller (see `docs/BUILDING.md`)
 
 ---
@@ -488,12 +539,16 @@ WIKI_GENERATE_TITLES = os.getenv('WIKI_GENERATE_TITLES') or true
 - `kiro_parser.py` - Kiro JSON parsing with execution log enrichment (322 tests passing)
 - `kiro_projects.py` - Workspace/session discovery (property-tested)
 
+**Codex Data Layer:**
+- `codex_parser.py` - Codex JSONL rollout parsing (34 tests passing)
+- `codex_projects.py` - Project discovery by cwd grouping (10 tests passing)
+
 **Formatting:**
 - `formatters.py` - Message formatting with structured content support (mature)
 - `colors.py` - ANSI colors (complete, no changes needed)
 
 **Configuration:**
-- `config.py` - Environment variable loading with Kiro settings (stable)
+- `config.py` - Environment variable loading with Kiro and Codex settings (stable)
 
 **Guidance:** Safe to use as-is. Changes should be additive only.
 
@@ -689,8 +744,11 @@ c) Refactor existing code to make room?"
 **"How does Kiro IDE support work?"**
 → See `src/kiro_parser.py` (parsing), `src/kiro_projects.py` (discovery), and README.md (usage)
 
+**"How does Codex CLI support work?"**
+→ See `src/codex_parser.py` (parsing), `src/codex_projects.py` (discovery), `docs/CODEX_IMPLEMENTATION.md` (design), and README.md (usage)
+
 **"How do I add support for a new chat source?"**
-→ Study `src/kiro_parser.py` and `src/kiro_projects.py` as examples, then:
+→ Study `src/kiro_parser.py` and `src/codex_parser.py` as examples, then:
 1. Create parser module for the new format
 2. Create projects module for discovery
 3. Add source to `ChatSource` enum in `src/models.py`
@@ -718,7 +776,7 @@ c) Refactor existing code to make room?"
 3. Add tests in `tests/test_sanitizer.py`
 4. Document in `docs/SANITIZATION.md`
 
-**Adding a new chat source (like Kiro):**
+**Adding a new chat source (like Kiro or Codex):**
 1. Create `src/{source}_parser.py` with parsing functions
 2. Create `src/{source}_projects.py` with discovery functions
 3. Add source value to `ChatSource` enum in `src/models.py`
@@ -731,7 +789,7 @@ c) Refactor existing code to make room?"
 ---
 
 
-**Document Version:** 1.2  
-**Last Updated:** 2026-01-19  
-**Total Lines:** ~410  
-**Status:** ✅ Complete (Kiro IDE support fully tested)
+**Document Version:** 1.3  
+**Last Updated:** 2026-02-20  
+**Total Lines:** ~480  
+**Status:** ✅ Complete (Claude Desktop, Kiro IDE, and Codex CLI support)

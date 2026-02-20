@@ -21,7 +21,7 @@ from .projects import (
     get_project_chat_files
 )
 from .search import search_chat_content
-from .parser import parse_jsonl_file, count_messages_in_file
+from .parser import parse_jsonl_file, count_messages_in_file, count_codex_messages_in_file
 from .exporters import (
     export_chat_pretty,
     export_chat_to_file,
@@ -34,6 +34,24 @@ from .exceptions import ProjectNotFoundError, ChatFileNotFoundError
 from .models import ChatSource
 
 logger = logging.getLogger(__name__)
+
+
+def _source_label(source: ChatSource) -> str:
+    """Return display label for a chat source.
+
+    Args:
+        source: ChatSource enum value.
+
+    Returns:
+        Formatted source label string with consistent width.
+    """
+    if source == ChatSource.CLAUDE_DESKTOP:
+        return "[Claude]"
+    elif source == ChatSource.CODEX:
+        return "[Codex] "
+    elif source == ChatSource.KIRO_IDE:
+        return "[Kiro]  "
+    return "[?]     "
 
 
 def get_export_dirname(project_name: str, export_type: str) -> str:
@@ -99,6 +117,8 @@ def display_projects_list(source_filter: Optional[ChatSource] = None) -> None:
             title = "📁 Available Claude Desktop Projects"
         elif source_filter == ChatSource.KIRO_IDE:
             title = "📁 Available Kiro IDE Projects"
+        elif source_filter == ChatSource.CODEX:
+            title = "📁 Available Codex CLI Projects"
         else:
             title = "📁 Available Projects (All Sources)"
         
@@ -113,7 +133,7 @@ def display_projects_list(source_filter: Optional[ChatSource] = None) -> None:
         print("-" * 80)
 
         for info in projects:
-            source_label = "[Claude]" if info.source == ChatSource.CLAUDE_DESKTOP else "[Kiro]  "
+            source_label = _source_label(info.source)
             print(f"{source_label} {info.name:<28} {info.file_count:>5}  {info.total_messages:>8}   {info.last_modified}")
 
     except ProjectNotFoundError as e:
@@ -138,7 +158,7 @@ def display_search_results(search_term: str, source_filter: Optional[ChatSource]
         return
 
     for info in found_projects:
-        source_label = "[Claude]" if info.source == ChatSource.CLAUDE_DESKTOP else "[Kiro]  "
+        source_label = _source_label(info.source)
         print_colored(f"✅ {source_label} {info.name}", Colors.GREEN)
         print(f"   {info.file_count} chats, {info.total_messages} messages, modified: {info.last_modified}")
 
@@ -182,7 +202,7 @@ def display_recent_projects(count: int = 10, source_filter: Optional[ChatSource]
         return
 
     for info in projects:
-        source_label = "[Claude]" if info.source == ChatSource.CLAUDE_DESKTOP else "[Kiro]  "
+        source_label = _source_label(info.source)
         print_colored(f"📝 {source_label} {info.name}", Colors.GREEN)
         print(f"   {info.file_count} chats, {info.total_messages} messages, {info.last_modified}")
 
@@ -229,16 +249,24 @@ def browse_project_interactive(project_info: ProjectInfo) -> bool:
     Returns:
         True to return to main menu, False to quit.
     """
-    # Use project_info.name directly (already cleaned/decoded for Kiro projects)
+    # Use project_info.name directly (already cleaned/decoded for Kiro/Codex projects)
     # For Claude Desktop, clean_project_name handles the path-based name
-    if project_info.source == ChatSource.KIRO_IDE:
+    if project_info.source in (ChatSource.KIRO_IDE, ChatSource.CODEX):
         project_name = project_info.name
     else:
         project_name = clean_project_name(project_info.path.name)
-    chat_files = get_project_chat_files(project_info.path, project_info.source)
+    chat_files = get_project_chat_files(
+        project_info.path, project_info.source,
+        session_ids=project_info.session_ids
+    )
 
     if not chat_files:
-        file_type = ".json" if project_info.source == ChatSource.KIRO_IDE else "JSONL"
+        if project_info.source == ChatSource.KIRO_IDE:
+            file_type = ".json"
+        elif project_info.source == ChatSource.CODEX:
+            file_type = "rollout JSONL"
+        else:
+            file_type = "JSONL"
         print_colored(f"No {file_type} chat files found in project: {project_name}", Colors.YELLOW)
         return True
 
@@ -259,7 +287,10 @@ def browse_project_interactive(project_info: ProjectInfo) -> bool:
                 size = file_path.stat().st_size
                 size_str = f"{size/1024:.1f}KB" if size > 1024 else f"{size}B"
                 modified = datetime.fromtimestamp(file_path.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                msg_count = count_messages_in_file(file_path)
+                if project_info.source == ChatSource.CODEX:
+                    msg_count = count_codex_messages_in_file(file_path)
+                else:
+                    msg_count = count_messages_in_file(file_path)
 
                 print(f"{i:2d}) {filename:<{max_filename_len}}  {size_str:>9}  {msg_count:>6} msgs {modified}")
             except Exception:
@@ -411,6 +442,8 @@ def interactive_browser(source_filter: Optional[ChatSource] = None) -> None:
             title = "🤖 Claude Desktop Chat Browser"
         elif source_filter == ChatSource.KIRO_IDE:
             title = "🤖 Kiro IDE Chat Browser"
+        elif source_filter == ChatSource.CODEX:
+            title = "🤖 Codex CLI Chat Browser"
         else:
             title = "🤖 Chat Browser (All Sources)"
         
@@ -421,7 +454,7 @@ def interactive_browser(source_filter: Optional[ChatSource] = None) -> None:
         print()
 
         for i, info in enumerate(projects, 1):
-            source_label = "[Claude]" if info.source == ChatSource.CLAUDE_DESKTOP else "[Kiro]  "
+            source_label = _source_label(info.source)
             name_col = f"{i:2d}) {source_label} {info.name}"
             details_col = f"({info.file_count} chats, {info.total_messages} msgs, {info.last_modified})"
 
@@ -457,9 +490,10 @@ def interactive_browser(source_filter: Optional[ChatSource] = None) -> None:
                     print_colored("Select source:", Colors.YELLOW)
                     print("  1) Claude Desktop only")
                     print("  2) Kiro IDE only")
-                    print("  3) All sources")
+                    print("  3) Codex CLI only")
+                    print("  4) All sources")
                     print()
-                    source_choice = input("Enter choice (1-3): ").strip()
+                    source_choice = input("Enter choice (1-4): ").strip()
                     
                     if source_choice == '1':
                         source_filter = ChatSource.CLAUDE_DESKTOP
@@ -468,6 +502,9 @@ def interactive_browser(source_filter: Optional[ChatSource] = None) -> None:
                         source_filter = ChatSource.KIRO_IDE
                         print_colored("Switched to Kiro IDE only", Colors.GREEN)
                     elif source_choice == '3':
+                        source_filter = ChatSource.CODEX
+                        print_colored("Switched to Codex CLI only", Colors.GREEN)
+                    elif source_choice == '4':
                         source_filter = None
                         print_colored("Switched to all sources", Colors.GREEN)
                     else:

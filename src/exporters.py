@@ -30,9 +30,10 @@ logger = logging.getLogger(__name__)
 
 
 def _detect_chat_source(file_path: Path) -> ChatSource:
-    """Detect whether a chat file is from Claude Desktop or Kiro IDE.
+    """Detect whether a chat file is from Claude Desktop, Kiro IDE, or Codex CLI.
     
     Uses both file extension and content structure to determine source.
+    For .jsonl files, checks if first line is a Codex session_meta entry.
     
     Args:
         file_path: Path to the chat file
@@ -47,6 +48,18 @@ def _detect_chat_source(file_path: Path) -> ChatSource:
     
     # First check: file extension
     if file_path.suffix == '.jsonl':
+        # Could be Claude Desktop or Codex — check first line content
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                first_line = f.readline().strip()
+                if first_line:
+                    data = json.loads(first_line)
+                    # Codex rollout files start with session_meta
+                    if isinstance(data, dict) and data.get('type') == 'session_meta':
+                        return ChatSource.CODEX
+        except (json.JSONDecodeError, IOError):
+            pass
+        # Default for .jsonl: Claude Desktop
         return ChatSource.CLAUDE_DESKTOP
     
     if file_path.suffix in ('.chat', '.json'):
@@ -108,6 +121,31 @@ def _convert_kiro_to_dict(messages: List[ChatMessage]) -> List[Dict[str, Any]]:
     return chat_data
 
 
+def _convert_codex_to_dict(messages: List[ChatMessage]) -> List[Dict[str, Any]]:
+    """Convert Codex ChatMessage objects to dict format for compatibility.
+
+    Args:
+        messages: List of ChatMessage objects from Codex parser
+
+    Returns:
+        List of message dicts compatible with export functions
+    """
+    chat_data = []
+    for msg in messages:
+        entry = {
+            'message': {
+                'role': msg.role,
+                'content': msg.content
+            },
+            'timestamp': msg.timestamp,
+            'source': ChatSource.CODEX
+        }
+        if msg.execution_id:
+            entry['execution_id'] = msg.execution_id
+        chat_data.append(entry)
+    return chat_data
+
+
 def _log_enrichment_errors(errors: List[str], context: str) -> None:
     """Log enrichment errors consistently across all export functions.
     
@@ -158,7 +196,17 @@ def _load_chat_data(
         # Detect source using both extension and content
         source = _detect_chat_source(file_path)
         
-        if source == ChatSource.KIRO_IDE:
+        if source == ChatSource.CODEX:
+            # Parse Codex rollout file
+            from .codex_parser import parse_codex_rollout_file, extract_codex_messages
+
+            session = parse_codex_rollout_file(file_path)
+            messages = extract_codex_messages(session)
+
+            chat_data = _convert_codex_to_dict(messages)
+            return chat_data, ChatSource.CODEX, errors
+
+        elif source == ChatSource.KIRO_IDE:
             # Parse Kiro chat file to get session data
             import json
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -679,7 +727,11 @@ def export_project_chats(
         os.makedirs(export_dir, exist_ok=True)
 
         # Get chat files based on source type
-        if source == ChatSource.KIRO_IDE:
+        if source == ChatSource.CODEX:
+            # Codex: files are scattered across date directories
+            # Try recursive glob for rollout files
+            chat_files = list(project_path.rglob('rollout-*.jsonl'))
+        elif source == ChatSource.KIRO_IDE:
             chat_files = [f for f in project_path.glob('*.json') if f.name != 'sessions.json']
         else:
             chat_files = list(project_path.glob('*.jsonl'))

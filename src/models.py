@@ -17,10 +17,12 @@ class ChatSource(Enum):
     Attributes:
         CLAUDE_DESKTOP: Chat from Claude Desktop application
         KIRO_IDE: Chat from Kiro IDE
+        CODEX: Chat from OpenAI Codex CLI
         UNKNOWN: Unknown or unspecified source
     """
     CLAUDE_DESKTOP = "claude"
     KIRO_IDE = "kiro"
+    CODEX = "codex"
     UNKNOWN = "unknown"
 
 

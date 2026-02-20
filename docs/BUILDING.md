@@ -525,8 +525,8 @@ Add version metadata for Windows:
 ```python
 # In claude-chat-manager.spec, add after imports:
 version_info = (
-    ('FileVersion', '2.2.0.0'),
-    ('ProductVersion', '2.2.0.0'),
+    ('FileVersion', '3.0.0'),
+    ('ProductVersion', '3.0.0'),
     ('FileDescription', 'Claude Chat Manager'),
     ('CompanyName', 'Claude Chat Manager Team'),
     ('ProductName', 'Claude Chat Manager'),

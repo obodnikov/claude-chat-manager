@@ -25,8 +25,9 @@ class TestChatSource:
         sources = [source.value for source in ChatSource]
         assert "claude" in sources
         assert "kiro" in sources
+        assert "codex" in sources
         assert "unknown" in sources
-        assert len(sources) == 3
+        assert len(sources) == 4
 
 
 class TestChatMessage:
