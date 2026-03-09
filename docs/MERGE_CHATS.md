@@ -405,7 +405,7 @@ ls ~/exports/your-export-dir/*.md
 For advanced users, you can modify the similarity calculation in [src/chat_merger.py:296](../src/chat_merger.py#L296):
 
 ```python
-def _levenshtein_similarity(self, s1: str, s2: str) -> float:
+def _sequence_similarity(self, s1: str, s2: str) -> float:
     # Your custom similarity algorithm
     pass
 ```

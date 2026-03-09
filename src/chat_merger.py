@@ -128,7 +128,7 @@ class ChatMerger:
 
             # Create fingerprint from first N message pairs
             fingerprint_text = self._create_fingerprint_text(messages)
-            content_hash = hashlib.sha256(fingerprint_text.encode()).hexdigest()[:16]
+            content_hash = hashlib.sha256(fingerprint_text.encode()).hexdigest()[:32]
 
             return ChatFingerprint(
                 file_path=file_path,
@@ -251,14 +251,14 @@ class ChatMerger:
 
         # Compare full fingerprint text (first N message pairs)
         # This is more comprehensive than just comparing first_user_msg
-        similarity = self._levenshtein_similarity(
+        similarity = self._sequence_similarity(
             fp1.fingerprint_text.lower(),
             fp2.fingerprint_text.lower()
         )
 
         return similarity
 
-    def _levenshtein_similarity(self, s1: str, s2: str) -> float:
+    def _sequence_similarity(self, s1: str, s2: str) -> float:
         """Calculate similarity ratio between two strings using SequenceMatcher.
 
         Uses Python's difflib.SequenceMatcher which implements a sophisticated
