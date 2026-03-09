@@ -601,132 +601,279 @@ class TestUpdateWithDifferentFilenames:
 class TestCLIValidation:
     """Tests for CLI argument validation."""
 
-    def test_similarity_below_zero(self, tmp_path):
-        """Similarity threshold below 0 should be rejected."""
+    @staticmethod
+    def _load_merge_module():
+        """Load merge-chats.py as a module."""
         import importlib.util
-        import sys
-
         spec = importlib.util.spec_from_file_location("merge_chats", "merge-chats.py")
         merge_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(merge_module)
+        return merge_module
 
+    def test_similarity_below_zero(self, tmp_path, monkeypatch):
+        """Similarity threshold below 0 should be rejected."""
+        merge_module = self._load_merge_module()
         source_dir = tmp_path / "source"
         target_dir = tmp_path / "target"
         source_dir.mkdir()
         target_dir.mkdir()
 
-        # Simulate args
-        sys.argv = [
+        monkeypatch.setattr('sys.argv', [
             'merge-chats.py',
             '--source', str(source_dir),
             '--target', str(target_dir),
             '--preview',
             '--similarity', '-0.1'
-        ]
+        ])
 
         result = merge_module.main()
         assert result == 1
 
-    def test_similarity_above_one(self, tmp_path):
+    def test_similarity_above_one(self, tmp_path, monkeypatch):
         """Similarity threshold above 1.0 should be rejected."""
-        import importlib.util
-        import sys
-
-        spec = importlib.util.spec_from_file_location("merge_chats", "merge-chats.py")
-        merge_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(merge_module)
-
+        merge_module = self._load_merge_module()
         source_dir = tmp_path / "source"
         target_dir = tmp_path / "target"
         source_dir.mkdir()
         target_dir.mkdir()
 
-        sys.argv = [
+        monkeypatch.setattr('sys.argv', [
             'merge-chats.py',
             '--source', str(source_dir),
             '--target', str(target_dir),
             '--preview',
             '--similarity', '1.5'
-        ]
+        ])
 
         result = merge_module.main()
         assert result == 1
 
-    def test_fingerprint_messages_zero(self, tmp_path):
+    def test_fingerprint_messages_zero(self, tmp_path, monkeypatch):
         """Fingerprint messages of 0 should be rejected."""
-        import importlib.util
-        import sys
-
-        spec = importlib.util.spec_from_file_location("merge_chats", "merge-chats.py")
-        merge_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(merge_module)
-
+        merge_module = self._load_merge_module()
         source_dir = tmp_path / "source"
         target_dir = tmp_path / "target"
         source_dir.mkdir()
         target_dir.mkdir()
 
-        sys.argv = [
+        monkeypatch.setattr('sys.argv', [
             'merge-chats.py',
             '--source', str(source_dir),
             '--target', str(target_dir),
             '--preview',
             '--fingerprint-messages', '0'
-        ]
+        ])
 
         result = merge_module.main()
         assert result == 1
 
-    def test_fingerprint_messages_negative(self, tmp_path):
+    def test_fingerprint_messages_negative(self, tmp_path, monkeypatch):
         """Negative fingerprint messages should be rejected."""
-        import importlib.util
-        import sys
-
-        spec = importlib.util.spec_from_file_location("merge_chats", "merge-chats.py")
-        merge_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(merge_module)
-
+        merge_module = self._load_merge_module()
         source_dir = tmp_path / "source"
         target_dir = tmp_path / "target"
         source_dir.mkdir()
         target_dir.mkdir()
 
-        sys.argv = [
+        monkeypatch.setattr('sys.argv', [
             'merge-chats.py',
             '--source', str(source_dir),
             '--target', str(target_dir),
             '--preview',
             '--fingerprint-messages', '-1'
-        ]
+        ])
 
         result = merge_module.main()
         assert result == 1
 
-    def test_valid_similarity_accepted(self, tmp_path):
+    def test_valid_similarity_accepted(self, tmp_path, monkeypatch):
         """Valid similarity values should be accepted."""
-        import importlib.util
-        import sys
-
-        spec = importlib.util.spec_from_file_location("merge_chats", "merge-chats.py")
-        merge_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(merge_module)
-
+        merge_module = self._load_merge_module()
         source_dir = tmp_path / "source"
         target_dir = tmp_path / "target"
         source_dir.mkdir()
         target_dir.mkdir()
         (source_dir / "chat.md").write_text(SAMPLE_CHAT_1, encoding='utf-8')
 
-        sys.argv = [
+        monkeypatch.setattr('sys.argv', [
             'merge-chats.py',
             '--source', str(source_dir),
             '--target', str(target_dir),
             '--preview',
             '--similarity', '0.9'
-        ]
+        ])
 
         result = merge_module.main()
         assert result == 0
+
+    def test_similarity_boundary_zero(self, tmp_path, monkeypatch):
+        """Similarity threshold of 0.0 (boundary) should be accepted."""
+        merge_module = self._load_merge_module()
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        source_dir.mkdir()
+        target_dir.mkdir()
+        (source_dir / "chat.md").write_text(SAMPLE_CHAT_1, encoding='utf-8')
+
+        monkeypatch.setattr('sys.argv', [
+            'merge-chats.py',
+            '--source', str(source_dir),
+            '--target', str(target_dir),
+            '--preview',
+            '--similarity', '0.0'
+        ])
+
+        result = merge_module.main()
+        assert result == 0
+
+    def test_similarity_boundary_one(self, tmp_path, monkeypatch):
+        """Similarity threshold of 1.0 (boundary) should be accepted."""
+        merge_module = self._load_merge_module()
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        source_dir.mkdir()
+        target_dir.mkdir()
+        (source_dir / "chat.md").write_text(SAMPLE_CHAT_1, encoding='utf-8')
+
+        monkeypatch.setattr('sys.argv', [
+            'merge-chats.py',
+            '--source', str(source_dir),
+            '--target', str(target_dir),
+            '--preview',
+            '--similarity', '1.0'
+        ])
+
+        result = merge_module.main()
+        assert result == 0
+
+    def test_fingerprint_messages_boundary_one(self, tmp_path, monkeypatch):
+        """Fingerprint messages of 1 (boundary) should be accepted."""
+        merge_module = self._load_merge_module()
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        source_dir.mkdir()
+        target_dir.mkdir()
+        (source_dir / "chat.md").write_text(SAMPLE_CHAT_1, encoding='utf-8')
+
+        monkeypatch.setattr('sys.argv', [
+            'merge-chats.py',
+            '--source', str(source_dir),
+            '--target', str(target_dir),
+            '--preview',
+            '--fingerprint-messages', '1'
+        ])
+
+        result = merge_module.main()
+        assert result == 0
+
+
+class TestPathConfinement:
+    """Tests for path traversal protection in execute_decision."""
+
+    @staticmethod
+    def _load_merge_module():
+        """Load merge-chats.py as a module."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("merge_chats", "merge-chats.py")
+        merge_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(merge_module)
+        return merge_module
+
+    def test_path_traversal_rejected(self, tmp_path):
+        """UPDATE with target_file outside target_dir should be rejected."""
+        merge_module = self._load_merge_module()
+        mod_MergeDecision = merge_module.MergeDecision
+        mod_MergeAction = merge_module.MergeAction
+
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        outside_dir = tmp_path / "outside"
+        source_dir.mkdir()
+        target_dir.mkdir()
+        outside_dir.mkdir()
+
+        source_file = source_dir / "chat.md"
+        source_file.write_text(SAMPLE_CHAT_2, encoding='utf-8')
+
+        # Malicious target pointing outside target_dir
+        malicious_target = outside_dir / "sensitive.md"
+        malicious_target.write_text("sensitive data", encoding='utf-8')
+
+        decision = mod_MergeDecision(
+            source_file=source_file,
+            target_file=malicious_target,
+            action=mod_MergeAction.UPDATE,
+            reason="Source has more messages",
+            source_msgs=6,
+            target_msgs=4,
+            similarity=0.95
+        )
+
+        result = merge_module.execute_decision(decision, target_dir, backup=False)
+        assert result is False
+
+        # Sensitive file should not have been overwritten
+        assert malicious_target.read_text(encoding='utf-8') == "sensitive data"
+
+    def test_dotdot_traversal_rejected(self, tmp_path):
+        """UPDATE with ../.. path traversal should be rejected."""
+        merge_module = self._load_merge_module()
+        mod_MergeDecision = merge_module.MergeDecision
+        mod_MergeAction = merge_module.MergeAction
+
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        source_dir.mkdir()
+        target_dir.mkdir()
+
+        source_file = source_dir / "chat.md"
+        source_file.write_text(SAMPLE_CHAT_2, encoding='utf-8')
+
+        # Path traversal via ..
+        traversal_target = target_dir / ".." / "escaped.md"
+
+        decision = mod_MergeDecision(
+            source_file=source_file,
+            target_file=traversal_target,
+            action=mod_MergeAction.UPDATE,
+            reason="Source has more messages",
+            source_msgs=6,
+            target_msgs=4,
+            similarity=0.95
+        )
+
+        result = merge_module.execute_decision(decision, target_dir, backup=False)
+        assert result is False
+
+    def test_update_missing_target_file_fails(self, tmp_path):
+        """UPDATE with target_file=None should fail explicitly."""
+        merge_module = self._load_merge_module()
+        mod_MergeDecision = merge_module.MergeDecision
+        mod_MergeAction = merge_module.MergeAction
+
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        source_dir.mkdir()
+        target_dir.mkdir()
+
+        source_file = source_dir / "chat.md"
+        source_file.write_text(SAMPLE_CHAT_2, encoding='utf-8')
+
+        decision = mod_MergeDecision(
+            source_file=source_file,
+            target_file=None,
+            action=mod_MergeAction.UPDATE,
+            reason="Source has more messages",
+            source_msgs=6,
+            target_msgs=4,
+            similarity=0.95
+        )
+
+        result = merge_module.execute_decision(decision, target_dir, backup=False)
+        assert result is False
+
+        # Should NOT have created any file in target dir
+        assert not (target_dir / "chat.md").exists()
 
 
 class TestHashWidth:
