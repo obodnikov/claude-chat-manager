@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.chat_merger import ChatFingerprint, ChatMerger, MergeAction
+from src.chat_merger import ChatFingerprint, ChatMerger, MergeAction, MergeDecision
 
 
 # Sample chat content for testing
@@ -110,7 +110,7 @@ class TestChatFingerprint:
         assert fp is not None
         assert fp.file_path == chat_file
         assert fp.message_count > 0
-        assert len(fp.content_hash) == 16
+        assert len(fp.content_hash) == 32
         assert "authentication" in fp.first_user_msg.lower()
 
     def test_extract_fingerprint_with_timestamp(self, tmp_path):
@@ -367,31 +367,31 @@ class TestDirectoryAnalysis:
         assert summary['new'] + summary['update'] + summary['skip'] + summary['review'] == 2
 
 
-class TestLevenshteinSimilarity:
+class TestSequenceSimilarity:
     """Tests for string similarity calculation."""
 
     def test_identical_strings(self):
         """Test similarity of identical strings."""
         merger = ChatMerger()
-        similarity = merger._levenshtein_similarity("hello", "hello")
+        similarity = merger._sequence_similarity("hello", "hello")
         assert similarity == 1.0
 
     def test_completely_different(self):
         """Test similarity of completely different strings."""
         merger = ChatMerger()
-        similarity = merger._levenshtein_similarity("abc", "xyz")
+        similarity = merger._sequence_similarity("abc", "xyz")
         assert similarity == 0.0
 
     def test_empty_strings(self):
         """Test similarity with empty strings."""
         merger = ChatMerger()
-        similarity = merger._levenshtein_similarity("", "test")
+        similarity = merger._sequence_similarity("", "test")
         assert similarity == 0.0
 
     def test_partial_match(self):
         """Test similarity of partially matching strings."""
         merger = ChatMerger()
-        similarity = merger._levenshtein_similarity("hello world", "hello earth")
+        similarity = merger._sequence_similarity("hello world", "hello earth")
         # Should have some similarity (common prefix "hello ")
         assert 0.0 < similarity < 1.0
 
@@ -399,7 +399,7 @@ class TestLevenshteinSimilarity:
         """Test similarity with reordered words."""
         merger = ChatMerger()
         # Same words, different order
-        similarity = merger._levenshtein_similarity(
+        similarity = merger._sequence_similarity(
             "authentication system implementation",
             "implementation authentication system"
         )
@@ -410,7 +410,7 @@ class TestLevenshteinSimilarity:
         """Test similarity with typos."""
         merger = ChatMerger()
         # Single character typo
-        similarity = merger._levenshtein_similarity(
+        similarity = merger._sequence_similarity(
             "How do I implement authentication?",
             "How do I impliment authentication?"  # typo: "impliment"
         )
@@ -423,19 +423,19 @@ class TestLevenshteinSimilarity:
         original = "How do I add user authentication?"
         # With insertion
         with_insertion = "How do I add secure user authentication?"
-        similarity_insertion = merger._levenshtein_similarity(original, with_insertion)
+        similarity_insertion = merger._sequence_similarity(original, with_insertion)
         assert similarity_insertion > 0.8  # Still quite similar
 
         # With deletion
         with_deletion = "How do I add authentication?"
-        similarity_deletion = merger._levenshtein_similarity(original, with_deletion)
+        similarity_deletion = merger._sequence_similarity(original, with_deletion)
         assert similarity_deletion > 0.8  # Still quite similar
 
     def test_case_insensitive(self):
         """Test that similarity handles case differences."""
         merger = ChatMerger()
         # The method receives lowercased strings in practice
-        similarity = merger._levenshtein_similarity(
+        similarity = merger._sequence_similarity(
             "how do i implement authentication",
             "how do i implement authentication"
         )
@@ -446,6 +446,301 @@ class TestLevenshteinSimilarity:
         merger = ChatMerger()
         short = "auth"
         long = "How do I implement a complete authentication system with JWT tokens?"
-        similarity = merger._levenshtein_similarity(short, long)
+        similarity = merger._sequence_similarity(short, long)
         # Should have low similarity
         assert similarity < 0.3
+
+
+class TestUpdateWithDifferentFilenames:
+    """Tests for UPDATE behavior when source and target have different filenames."""
+
+    def test_update_targets_matched_file_not_source_name(self, tmp_path):
+        """UPDATE should overwrite the matched target file, not create a new file with source name."""
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        source_dir.mkdir()
+        target_dir.mkdir()
+
+        # Source has more messages, different filename than target
+        (source_dir / "auth-implementation-2025-12-27.md").write_text(
+            SAMPLE_CHAT_2, encoding='utf-8'
+        )
+        # Target has fewer messages, different filename
+        (target_dir / "old-auth-chat-2025-12-26.md").write_text(
+            SAMPLE_CHAT_1, encoding='utf-8'
+        )
+
+        merger = ChatMerger()
+        decisions = merger.analyze_directories(source_dir, target_dir)
+
+        # Should detect UPDATE (same conversation, source has more messages)
+        update_decisions = [d for d in decisions if d.action == MergeAction.UPDATE]
+        assert len(update_decisions) == 1
+
+        decision = update_decisions[0]
+        # target_file should point to the matched target, not source name
+        assert decision.target_file == target_dir / "old-auth-chat-2025-12-26.md"
+        assert decision.source_file == source_dir / "auth-implementation-2025-12-27.md"
+
+    def test_execute_update_overwrites_target_file(self, tmp_path):
+        """execute_decision for UPDATE should overwrite the matched target, not create new file."""
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        source_dir.mkdir()
+        target_dir.mkdir()
+
+        source_file = source_dir / "new-name.md"
+        target_file = target_dir / "old-name.md"
+        source_file.write_text(SAMPLE_CHAT_2, encoding='utf-8')
+        target_file.write_text(SAMPLE_CHAT_1, encoding='utf-8')
+
+        # Import from merge-chats.py to get its own MergeAction/MergeDecision
+        # (importlib creates separate enum instances that don't compare equal)
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("merge_chats", "merge-chats.py")
+        merge_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(merge_module)
+
+        mod_MergeDecision = merge_module.MergeDecision
+        mod_MergeAction = merge_module.MergeAction
+
+        decision = mod_MergeDecision(
+            source_file=source_file,
+            target_file=target_file,
+            action=mod_MergeAction.UPDATE,
+            reason="Source has more messages",
+            source_msgs=6,
+            target_msgs=4,
+            similarity=0.95
+        )
+
+        result = merge_module.execute_decision(decision, target_dir, backup=False)
+        assert result is True
+
+        # The old target file should be overwritten with source content
+        assert target_file.exists()
+        assert target_file.read_text(encoding='utf-8') == SAMPLE_CHAT_2
+
+        # Should NOT have created a file with the source name in target dir
+        assert not (target_dir / "new-name.md").exists()
+
+    def test_execute_update_backup_targets_correct_file(self, tmp_path):
+        """Backup on UPDATE should be created for the actual target file being overwritten."""
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        source_dir.mkdir()
+        target_dir.mkdir()
+
+        source_file = source_dir / "new-name.md"
+        target_file = target_dir / "old-name.md"
+        source_file.write_text(SAMPLE_CHAT_2, encoding='utf-8')
+        target_file.write_text(SAMPLE_CHAT_1, encoding='utf-8')
+
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("merge_chats", "merge-chats.py")
+        merge_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(merge_module)
+
+        mod_MergeDecision = merge_module.MergeDecision
+        mod_MergeAction = merge_module.MergeAction
+
+        decision = mod_MergeDecision(
+            source_file=source_file,
+            target_file=target_file,
+            action=mod_MergeAction.UPDATE,
+            reason="Source has more messages",
+            source_msgs=6,
+            target_msgs=4,
+            similarity=0.95
+        )
+
+        result = merge_module.execute_decision(decision, target_dir, backup=True)
+        assert result is True
+
+        # Backup should be for the target file (old-name.md.backup), not new-name.md.backup
+        backup_file = target_dir / "old-name.md.backup"
+        assert backup_file.exists()
+        assert backup_file.read_text(encoding='utf-8') == SAMPLE_CHAT_1
+
+        # No backup for source name
+        assert not (target_dir / "new-name.md.backup").exists()
+
+    def test_execute_new_uses_source_filename(self, tmp_path):
+        """NEW action should use the source filename in the target directory."""
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        source_dir.mkdir()
+        target_dir.mkdir()
+
+        source_file = source_dir / "brand-new-chat.md"
+        source_file.write_text(SAMPLE_CHAT_3, encoding='utf-8')
+
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("merge_chats", "merge-chats.py")
+        merge_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(merge_module)
+
+        mod_MergeDecision = merge_module.MergeDecision
+        mod_MergeAction = merge_module.MergeAction
+
+        decision = mod_MergeDecision(
+            source_file=source_file,
+            target_file=None,
+            action=mod_MergeAction.NEW,
+            reason="No matching conversation found",
+            source_msgs=2
+        )
+
+        result = merge_module.execute_decision(decision, target_dir, backup=False)
+        assert result is True
+
+        # Should create file with source name in target dir
+        assert (target_dir / "brand-new-chat.md").exists()
+
+
+class TestCLIValidation:
+    """Tests for CLI argument validation."""
+
+    def test_similarity_below_zero(self, tmp_path):
+        """Similarity threshold below 0 should be rejected."""
+        import importlib.util
+        import sys
+
+        spec = importlib.util.spec_from_file_location("merge_chats", "merge-chats.py")
+        merge_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(merge_module)
+
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        source_dir.mkdir()
+        target_dir.mkdir()
+
+        # Simulate args
+        sys.argv = [
+            'merge-chats.py',
+            '--source', str(source_dir),
+            '--target', str(target_dir),
+            '--preview',
+            '--similarity', '-0.1'
+        ]
+
+        result = merge_module.main()
+        assert result == 1
+
+    def test_similarity_above_one(self, tmp_path):
+        """Similarity threshold above 1.0 should be rejected."""
+        import importlib.util
+        import sys
+
+        spec = importlib.util.spec_from_file_location("merge_chats", "merge-chats.py")
+        merge_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(merge_module)
+
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        source_dir.mkdir()
+        target_dir.mkdir()
+
+        sys.argv = [
+            'merge-chats.py',
+            '--source', str(source_dir),
+            '--target', str(target_dir),
+            '--preview',
+            '--similarity', '1.5'
+        ]
+
+        result = merge_module.main()
+        assert result == 1
+
+    def test_fingerprint_messages_zero(self, tmp_path):
+        """Fingerprint messages of 0 should be rejected."""
+        import importlib.util
+        import sys
+
+        spec = importlib.util.spec_from_file_location("merge_chats", "merge-chats.py")
+        merge_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(merge_module)
+
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        source_dir.mkdir()
+        target_dir.mkdir()
+
+        sys.argv = [
+            'merge-chats.py',
+            '--source', str(source_dir),
+            '--target', str(target_dir),
+            '--preview',
+            '--fingerprint-messages', '0'
+        ]
+
+        result = merge_module.main()
+        assert result == 1
+
+    def test_fingerprint_messages_negative(self, tmp_path):
+        """Negative fingerprint messages should be rejected."""
+        import importlib.util
+        import sys
+
+        spec = importlib.util.spec_from_file_location("merge_chats", "merge-chats.py")
+        merge_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(merge_module)
+
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        source_dir.mkdir()
+        target_dir.mkdir()
+
+        sys.argv = [
+            'merge-chats.py',
+            '--source', str(source_dir),
+            '--target', str(target_dir),
+            '--preview',
+            '--fingerprint-messages', '-1'
+        ]
+
+        result = merge_module.main()
+        assert result == 1
+
+    def test_valid_similarity_accepted(self, tmp_path):
+        """Valid similarity values should be accepted."""
+        import importlib.util
+        import sys
+
+        spec = importlib.util.spec_from_file_location("merge_chats", "merge-chats.py")
+        merge_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(merge_module)
+
+        source_dir = tmp_path / "source"
+        target_dir = tmp_path / "target"
+        source_dir.mkdir()
+        target_dir.mkdir()
+        (source_dir / "chat.md").write_text(SAMPLE_CHAT_1, encoding='utf-8')
+
+        sys.argv = [
+            'merge-chats.py',
+            '--source', str(source_dir),
+            '--target', str(target_dir),
+            '--preview',
+            '--similarity', '0.9'
+        ]
+
+        result = merge_module.main()
+        assert result == 0
+
+
+class TestHashWidth:
+    """Tests for content hash width (128-bit / 32 hex chars)."""
+
+    def test_hash_length_is_32_hex(self, tmp_path):
+        """Content hash should be 32 hex characters (128-bit)."""
+        chat_file = tmp_path / "chat.md"
+        chat_file.write_text(SAMPLE_CHAT_1, encoding='utf-8')
+
+        merger = ChatMerger()
+        fp = merger.extract_fingerprint(chat_file)
+
+        assert fp is not None
+        assert len(fp.content_hash) == 32
+        # Verify it's valid hex
+        int(fp.content_hash, 16)

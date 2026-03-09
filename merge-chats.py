@@ -240,7 +240,12 @@ def execute_decision(decision: MergeDecision, target_dir: Path, backup: bool) ->
         True if successful, False otherwise.
     """
     try:
-        target_file = target_dir / decision.source_file.name
+        # For UPDATE, overwrite the matched target file (which may have a different name)
+        # For NEW, use the source filename in the target directory
+        if decision.action == MergeAction.UPDATE and decision.target_file:
+            target_file = decision.target_file
+        else:
+            target_file = target_dir / decision.source_file.name
 
         # Create backup if overwriting and backup enabled
         if decision.action == MergeAction.UPDATE and backup and target_file.exists():
@@ -396,6 +401,22 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    # Validate similarity threshold
+    if not 0.0 <= args.similarity <= 1.0:
+        print_colored(
+            f"❌ Invalid similarity threshold: {args.similarity} (must be between 0.0 and 1.0)",
+            Colors.RED
+        )
+        return 1
+
+    # Validate fingerprint messages
+    if args.fingerprint_messages < 1:
+        print_colored(
+            f"❌ Invalid fingerprint-messages: {args.fingerprint_messages} (must be >= 1)",
+            Colors.RED
+        )
+        return 1
 
     # Set logging level
     if args.verbose:
