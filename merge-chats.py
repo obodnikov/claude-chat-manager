@@ -242,10 +242,26 @@ def execute_decision(decision: MergeDecision, target_dir: Path, backup: bool) ->
     try:
         # For UPDATE, overwrite the matched target file (which may have a different name)
         # For NEW, use the source filename in the target directory
-        if decision.action == MergeAction.UPDATE and decision.target_file:
+        if decision.action == MergeAction.UPDATE:
+            if not decision.target_file:
+                logger.error(
+                    f"UPDATE decision for {decision.source_file.name} "
+                    f"is missing target_file"
+                )
+                return False
             target_file = decision.target_file
         else:
             target_file = target_dir / decision.source_file.name
+
+        # Path confinement: ensure target_file is inside target_dir
+        resolved_target = target_file.resolve()
+        resolved_dir = target_dir.resolve()
+        if not resolved_target.is_relative_to(resolved_dir):
+            logger.error(
+                f"Refusing to write outside target directory: "
+                f"{resolved_target} is not inside {resolved_dir}"
+            )
+            return False
 
         # Create backup if overwriting and backup enabled
         if decision.action == MergeAction.UPDATE and backup and target_file.exists():
