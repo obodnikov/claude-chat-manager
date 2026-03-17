@@ -2,7 +2,7 @@
 
 A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat files with an intuitive interface and Unix `less`-like paging for smooth reading experience.
 
-**Version 3.0.0** - Now with Codex CLI and Kiro IDE support! Browse and export chats from Claude Desktop, Kiro IDE, and OpenAI Codex CLI.
+**Version 3.1.0** - Now with steering content filtering! Browse and export chats from Claude Desktop, Kiro IDE, and OpenAI Codex CLI.
 
 ## ✨ Features
 
@@ -12,6 +12,7 @@ A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat f
 - 📊 **Multiple Export Formats** - Pretty terminal output, Markdown, clean Book format, or raw JSON
 - 📚 **Wiki Generation** - Generate AI-powered single-page wikis from entire projects
 - 🔒 **Data Sanitization** - NEW! Automatically detect and redact API keys, tokens, and passwords
+- 🧹 **Steering Content Filtering** - Automatically strips Kiro steering/included rules from exports
 - 🤖 **AI-Powered Titles** - Automatic chat title generation using LLM (via OpenRouter)
 - 🎯 **Batch Export** - Export entire projects to organized Markdown files
 - 🎨 **Colored Output** - Beautiful terminal interface with syntax highlighting
@@ -245,8 +246,45 @@ Filtered system tags:
 - `<system-reminder>` - System reminder messages
 - `<user-prompt-submit-hook>` - Hook execution messages
 - `<command-message>` - Command status messages
+- `<steering-reminder>` - Steering file content (summarized to one-liner)
+- `## Included Rules ... </user-rule>` - Kiro steering/included rules blocks (summarized)
+- `<EnvironmentContext>` - IDE environment metadata (open files, active editor)
 
 This can be disabled by setting `WIKI_FILTER_SYSTEM_TAGS=false` in your `.env` file.
+
+**Steering Content Filtering (NEW!):**
+
+Kiro IDE injects steering files (like coding rules, JIRA safety rules, etc.) into every user message. These can dominate the export with repetitive boilerplate. By default, these blocks are replaced with a compact summary:
+
+```markdown
+# Before (raw export):
+## Included Rules (Global/jira-safety.md) [Global]
+  I am providing you some additional guidance...
+<user-rule id=Global/jira-safety.md>
+... hundreds of lines of rule content ...
+</user-rule>
+talk with me about JIRA ticket EEAEPP-115211
+
+# After (filtered export):
+*[Steering files included: Global/jira-safety.md]*
+talk with me about JIRA ticket EEAEPP-115211
+```
+
+To preserve full steering content in exports, use the `--keep-steering` CLI flag:
+
+```bash
+# Strip steering (default)
+python3 claude-chat-manager.py --source kiro "My Project" -f book -o exports/
+
+# Keep full steering content
+python3 claude-chat-manager.py --source kiro "My Project" -f book -o exports/ --keep-steering
+```
+
+Or configure via `.env`:
+```bash
+BOOK_KEEP_STEERING=false    # Strip steering in book exports (default)
+WIKI_KEEP_STEERING=false    # Strip steering in wiki exports (default)
+```
 
 After generation, the summary shows how many chats were filtered:
 ```
@@ -349,6 +387,7 @@ python3 claude-chat-manager.py "My Project" --wiki wiki.md --sanitize
 --sanitize-paths              # Sanitize file paths
 --sanitize-preview            # Preview without exporting
 --sanitize-report FILE        # Generate detailed report
+--keep-steering               # Keep full steering/included rules in exports
 ```
 
 ### Examples
@@ -617,6 +656,7 @@ BOOK_FILTER_SYSTEM_TAGS=true       # Remove system notifications
 BOOK_FILTER_TOOL_NOISE=true        # Remove tool execution details
 BOOK_SHOW_FILE_REFS=true           # Show modified files
 BOOK_INCLUDE_DATE=true             # Append date to filenames (YYYY-MM-DD)
+BOOK_KEEP_STEERING=false           # Keep full steering content (default: strip)
 ```
 
 See [docs/BOOK_MODE_ENHANCEMENTS.md](docs/BOOK_MODE_ENHANCEMENTS.md) for complete details.
@@ -875,6 +915,20 @@ All existing features work with Codex sessions:
 - **Smart Naming**: Project names derived from the working directory path
 
 ## 🛠️ What's New
+
+### v3.1.0 - Steering Content Filtering (March 2026)
+
+**New Features:**
+- 🧹 **Steering Content Filtering**: Kiro IDE steering files (`## Included Rules`, `<user-rule>`, `<EnvironmentContext>`) are automatically stripped from exports and replaced with a compact summary line
+- 🏷️ **Smart Filename Generation**: Export filenames now use the actual user question instead of steering boilerplate, preventing all exports from getting identical names
+- 🔧 **`--keep-steering` CLI Flag**: Opt-in to preserve full steering content when needed
+- ⚙️ **`BOOK_KEEP_STEERING` / `WIKI_KEEP_STEERING`**: Environment variable configuration for steering behavior
+
+**Technical Details:**
+- New `_strip_included_rules()` and `_strip_environment_context()` methods in `ChatFilter`
+- `keep_steering` parameter threaded through all export paths (book, wiki, batch, single)
+- Shared `_extract_title_from_user_content()` helper for DRY filename generation
+- 26 new unit tests for steering filtering and filename generation
 
 ### v3.0.0 - Codex CLI & Kiro IDE Support (February 2026)
 
@@ -1188,10 +1242,10 @@ This tool is provided as-is for personal use with Claude Desktop chat histories.
 
 ## 🎯 Project Stats
 
-- **Version**: 3.0.0
+- **Version**: 3.1.0
 - **Python**: 3.9+
 - **Modules**: 19 source modules
-- **Tests**: 448 unit tests (100% passing)
+- **Tests**: 474 unit tests (100% passing)
 - **Coverage**: Core modules 52-100%
 - **Type Hints**: 100% coverage
 - **Documentation**: Complete with examples and enhancement guide
@@ -1211,4 +1265,4 @@ This tool is provided as-is for personal use with Claude Desktop chat histories.
 
 **Made with ❤️ for the Claude community**
 
-*Version 3.0 - Claude Desktop, Kiro IDE, and Codex CLI support!*
+*Version 3.1 - Claude Desktop, Kiro IDE, and Codex CLI support with steering content filtering!*
