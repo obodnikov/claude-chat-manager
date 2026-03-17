@@ -301,6 +301,49 @@ def _load_chat_data(
         raise ExportError(f"Failed to load chat data from {file_path}: {e}")
 
 
+def _extract_title_from_user_content(
+    text: str,
+    chat_filter: Optional[ChatFilter] = None,
+    max_length: int = 60
+) -> Optional[str]:
+    """Extract a meaningful title from user message content.
+
+    Strips steering/system tags and skips summary markers to find
+    the first line of actual user content.
+
+    Args:
+        text: Raw or pre-extracted user message text.
+        chat_filter: Optional ChatFilter for cleaning. If None, a default is created.
+        max_length: Maximum title length before truncation.
+
+    Returns:
+        Extracted title string, or None if no meaningful content found.
+    """
+    if not text or not text.strip():
+        return None
+
+    # Clean steering/system tags
+    if chat_filter:
+        cleaned = chat_filter.clean_user_message(text)
+    else:
+        default_filter = ChatFilter(filter_system_tags=True, keep_steering=False)
+        cleaned = default_filter.clean_user_message(text)
+
+    if not cleaned:
+        return None
+
+    # Find first meaningful line (skip steering summary markers)
+    for line in cleaned.split('\n'):
+        line = line.strip()
+        if line and not line.startswith('*[Steering files included:'):
+            title = line[:max_length]
+            if len(line) > max_length:
+                title += "..."
+            return title
+
+    return None
+
+
 def _generate_filename_from_content(chat_data: List[Dict[str, Any]], fallback: str, source: ChatSource) -> str:
     """Generate filename from chat content (session title or first message).
     
@@ -317,6 +360,10 @@ def _generate_filename_from_content(chat_data: List[Dict[str, Any]], fallback: s
     
     title = None
     
+    # Use a minimal ChatFilter to strip steering/system tags from the first message
+    # so filenames reflect actual user content, not injected boilerplate
+    name_filter = ChatFilter(filter_system_tags=True, keep_steering=False)
+    
     # Extract first user message
     for entry in chat_data:
         message = entry.get('message', {})
@@ -325,12 +372,9 @@ def _generate_filename_from_content(chat_data: List[Dict[str, Any]], fallback: s
         if role in ('user', 'human'):
             content = message.get('content', '')
             if isinstance(content, str) and content.strip():
-                # Use first line or first 60 chars
-                first_line = content.split('\n')[0]
-                title = first_line[:60].strip()
-                if len(first_line) > 60:
-                    title += "..."
-                break
+                title = _extract_title_from_user_content(content, name_filter)
+                if title:
+                    break
     
     # Use fallback if no title found
     if not title:
@@ -536,12 +580,14 @@ def export_chat_markdown(chat_data: List[Dict[str, Any]], verbose: bool = False)
     return ''.join(output_lines)
 
 
-def export_chat_book(chat_data: List[Dict[str, Any]], sanitize: Optional[bool] = None) -> str:
+def export_chat_book(chat_data: List[Dict[str, Any]], sanitize: Optional[bool] = None,
+                     keep_steering: Optional[bool] = None) -> str:
     """Export chat in clean book format without timestamps.
 
     Applies enhanced filtering based on configuration:
     - Filters out system tags from user messages
     - Removes tool use/result noise
+    - Strips steering/included rules blocks (unless keep_steering=True)
     - Shows file references (optional)
     - Enhanced user message highlighting
     - Sanitizes sensitive data (optional)
@@ -549,6 +595,7 @@ def export_chat_book(chat_data: List[Dict[str, Any]], sanitize: Optional[bool] =
     Args:
         chat_data: Parsed JSONL chat data.
         sanitize: Enable sanitization (overrides config if provided).
+        keep_steering: Keep full steering content (overrides config if provided).
 
     Returns:
         Book formatted string.
@@ -573,9 +620,11 @@ def export_chat_book(chat_data: List[Dict[str, Any]], sanitize: Optional[bool] =
         logger.debug(f"Sanitization enabled for book export (level: {config.sanitize_level}, style: {config.sanitize_style})")
 
     # Initialize chat filter with book-specific config
+    effective_keep_steering = keep_steering if keep_steering is not None else config.book_keep_steering
     chat_filter = ChatFilter(
         skip_trivial=False,  # Don't filter entire chats here, done earlier
-        filter_system_tags=config.book_filter_system_tags
+        filter_system_tags=config.book_filter_system_tags,
+        keep_steering=effective_keep_steering
     )
 
     for entry in chat_data:
@@ -698,7 +747,8 @@ def export_project_chats(
     format_type: str = 'markdown',
     api_key: Optional[str] = None,
     sanitize: Optional[bool] = None,
-    source: ChatSource = ChatSource.CLAUDE_DESKTOP
+    source: ChatSource = ChatSource.CLAUDE_DESKTOP,
+    keep_steering: Optional[bool] = None
 ) -> List[Path]:
     """Export all chats in a project to a directory.
 
@@ -706,6 +756,7 @@ def export_project_chats(
     - Filters out trivial/empty chats (configurable)
     - Generates descriptive filenames (configurable)
     - Applies content cleaning and filtering
+    - Strips steering/included rules blocks (unless keep_steering=True)
     - Optional sensitive data sanitization
 
     Args:
@@ -715,6 +766,7 @@ def export_project_chats(
         api_key: OpenRouter API key for LLM title generation (optional).
         sanitize: Override .env sanitization setting (True/False/None).
         source: Chat source type (Claude Desktop or Kiro IDE).
+        keep_steering: Keep full steering content (overrides config if provided).
 
     Returns:
         List of exported file paths.
@@ -826,7 +878,8 @@ def export_project_chats(
                 if format_type == 'markdown':
                     content = export_chat_markdown(chat_data)
                 elif format_type == 'book':
-                    content = export_chat_book(chat_data, sanitize=sanitize)
+                    content = export_chat_book(chat_data, sanitize=sanitize,
+                                               keep_steering=keep_steering)
                 else:
                     content = export_chat_markdown(chat_data)
                 
@@ -853,7 +906,8 @@ def export_kiro_workspace(
     format_type: str = 'markdown',
     verbose: bool = False,
     sanitize: Optional[bool] = None,
-    kiro_data_dir: Optional[Path] = None
+    kiro_data_dir: Optional[Path] = None,
+    keep_steering: Optional[bool] = None
 ) -> List[Path]:
     """Export all sessions in a Kiro workspace to a directory.
     
@@ -867,6 +921,7 @@ def export_kiro_workspace(
         verbose: Include additional metadata (execution IDs, context items).
         sanitize: Override .env sanitization setting (True/False/None).
         kiro_data_dir: Path to kiro.kiroagent directory (for execution logs).
+        keep_steering: Keep full steering content (overrides config if provided).
         
     Returns:
         List of exported file paths.
@@ -932,7 +987,8 @@ def export_kiro_workspace(
                 if format_type == 'markdown':
                     content = export_chat_markdown(chat_data, verbose=verbose)
                 elif format_type == 'book':
-                    content = export_chat_book(chat_data, sanitize=sanitize)
+                    content = export_chat_book(chat_data, sanitize=sanitize,
+                                               keep_steering=keep_steering)
                 elif format_type == 'pretty':
                     content = export_chat_pretty(chat_data, verbose=verbose)
                 else:
@@ -1073,12 +1129,9 @@ def _generate_book_filename(
                     text = str(content)
 
                 if text:
-                    # Use first line or first 60 chars
-                    first_line = text.split('\n')[0]
-                    title = first_line[:60].strip()
-                    if len(first_line) > 60:
-                        title += "..."
-                    break
+                    title = _extract_title_from_user_content(text, chat_filter)
+                    if title:
+                        break
 
     # Last resort: use filename
     if not title:
@@ -1119,7 +1172,8 @@ def export_single_chat(
     chat_file: Path,
     format_type: str = 'markdown',
     output_dir: Optional[Path] = None,
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    keep_steering: Optional[bool] = None
 ) -> Path:
     """Export a single chat file to markdown or book format.
     
@@ -1221,7 +1275,7 @@ def export_single_chat(
         # Write content directly using already-loaded (and enriched) chat_data
         # instead of calling export_chat_to_file which would re-load without enrichment
         if format_type == 'book':
-            content = export_chat_book(chat_data)
+            content = export_chat_book(chat_data, keep_steering=keep_steering)
         elif format_type == 'markdown':
             content = export_chat_markdown(chat_data)
         elif format_type == 'pretty':
@@ -1245,7 +1299,8 @@ def export_project_wiki(
     use_llm: bool = True,
     api_key: Optional[str] = None,
     update_mode: str = 'new',
-    sanitize: Optional[bool] = None
+    sanitize: Optional[bool] = None,
+    keep_steering: Optional[bool] = None
 ) -> None:
     """Export entire project as single wiki file with AI-generated titles.
 
@@ -1256,6 +1311,7 @@ def export_project_wiki(
         api_key: OpenRouter API key (required if use_llm=True).
         update_mode: Mode: 'new', 'update', or 'rebuild'.
         sanitize: Override .env sanitization setting (True/False/None).
+        keep_steering: Keep full steering content (overrides config if provided).
 
     Raises:
         ExportError: If export operation fails.
@@ -1283,7 +1339,8 @@ def export_project_wiki(
 
         # Generate wiki
         project_name = clean_project_name(project_path.name)
-        wiki_gen = WikiGenerator(llm_client=llm_client, sanitize=sanitize)
+        wiki_gen = WikiGenerator(llm_client=llm_client, sanitize=sanitize,
+                                 keep_steering=keep_steering)
 
         # Pass existing wiki file for update/rebuild modes
         existing_wiki = output_file if update_mode in ['update', 'rebuild'] else None

@@ -38,13 +38,15 @@ class WikiGenerationStats:
 class WikiGenerator:
     """Generate wiki-style documentation from chat files."""
 
-    def __init__(self, llm_client: Optional[OpenRouterClient] = None, sanitize: Optional[bool] = None) -> None:
+    def __init__(self, llm_client: Optional[OpenRouterClient] = None, sanitize: Optional[bool] = None,
+                 keep_steering: Optional[bool] = None) -> None:
         """Initialize wiki generator.
 
         Args:
             llm_client: Optional OpenRouter client for title generation.
                        If None, will use fallback title generation.
             sanitize: Enable sanitization (overrides config if provided).
+            keep_steering: Keep full steering content (overrides config if provided).
         """
         self.llm_client = llm_client
 
@@ -78,13 +80,15 @@ class WikiGenerator:
                 self.sanitizer = None
 
         # Initialize shared chat filter with wiki-specific config
+        effective_keep_steering = keep_steering if keep_steering is not None else config.wiki_keep_steering
         self.chat_filter = ChatFilter(
             skip_trivial=config.wiki_skip_trivial,
             min_messages=config.wiki_min_messages,
             min_words=config.wiki_min_words,
             skip_keywords=config.wiki_skip_keywords,
             require_content=config.wiki_require_content,
-            filter_system_tags=config.wiki_filter_system_tags
+            filter_system_tags=config.wiki_filter_system_tags,
+            keep_steering=effective_keep_steering
         )
         logger.debug(f"WikiGenerator initialized (LLM: {llm_client is not None})")
 

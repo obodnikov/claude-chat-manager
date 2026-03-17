@@ -384,6 +384,19 @@ class Config:
         value = os.getenv('WIKI_FILTER_SYSTEM_TAGS', 'true').lower()
         return value in ('true', '1', 'yes', 'on')
 
+    @property
+    def wiki_keep_steering(self) -> bool:
+        """Check if steering/included rules content should be kept in wiki exports.
+
+        When False (default), steering blocks are replaced with a compact summary.
+        When True, full steering content is preserved in the export.
+
+        Returns:
+            True if steering content should be kept verbatim.
+        """
+        value = os.getenv('WIKI_KEEP_STEERING', 'false').lower()
+        return value in ('true', '1', 'yes', 'on')
+
     # Book Export Settings
 
     @property
@@ -462,6 +475,19 @@ class Config:
             True if system tags should be filtered.
         """
         value = os.getenv('BOOK_FILTER_SYSTEM_TAGS', 'true').lower()
+        return value in ('true', '1', 'yes', 'on')
+
+    @property
+    def book_keep_steering(self) -> bool:
+        """Check if steering/included rules content should be kept in book exports.
+
+        When False (default), steering blocks are replaced with a compact summary.
+        When True, full steering content is preserved in the export.
+
+        Returns:
+            True if steering content should be kept verbatim.
+        """
+        value = os.getenv('BOOK_KEEP_STEERING', 'false').lower()
         return value in ('true', '1', 'yes', 'on')
 
     @property
