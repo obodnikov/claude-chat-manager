@@ -536,12 +536,14 @@ def export_chat_markdown(chat_data: List[Dict[str, Any]], verbose: bool = False)
     return ''.join(output_lines)
 
 
-def export_chat_book(chat_data: List[Dict[str, Any]], sanitize: Optional[bool] = None) -> str:
+def export_chat_book(chat_data: List[Dict[str, Any]], sanitize: Optional[bool] = None,
+                     keep_steering: Optional[bool] = None) -> str:
     """Export chat in clean book format without timestamps.
 
     Applies enhanced filtering based on configuration:
     - Filters out system tags from user messages
     - Removes tool use/result noise
+    - Strips steering/included rules blocks (unless keep_steering=True)
     - Shows file references (optional)
     - Enhanced user message highlighting
     - Sanitizes sensitive data (optional)
@@ -549,6 +551,7 @@ def export_chat_book(chat_data: List[Dict[str, Any]], sanitize: Optional[bool] =
     Args:
         chat_data: Parsed JSONL chat data.
         sanitize: Enable sanitization (overrides config if provided).
+        keep_steering: Keep full steering content (overrides config if provided).
 
     Returns:
         Book formatted string.
@@ -573,9 +576,11 @@ def export_chat_book(chat_data: List[Dict[str, Any]], sanitize: Optional[bool] =
         logger.debug(f"Sanitization enabled for book export (level: {config.sanitize_level}, style: {config.sanitize_style})")
 
     # Initialize chat filter with book-specific config
+    effective_keep_steering = keep_steering if keep_steering is not None else config.book_keep_steering
     chat_filter = ChatFilter(
         skip_trivial=False,  # Don't filter entire chats here, done earlier
-        filter_system_tags=config.book_filter_system_tags
+        filter_system_tags=config.book_filter_system_tags,
+        keep_steering=effective_keep_steering
     )
 
     for entry in chat_data:
@@ -698,7 +703,8 @@ def export_project_chats(
     format_type: str = 'markdown',
     api_key: Optional[str] = None,
     sanitize: Optional[bool] = None,
-    source: ChatSource = ChatSource.CLAUDE_DESKTOP
+    source: ChatSource = ChatSource.CLAUDE_DESKTOP,
+    keep_steering: Optional[bool] = None
 ) -> List[Path]:
     """Export all chats in a project to a directory.
 
@@ -706,6 +712,7 @@ def export_project_chats(
     - Filters out trivial/empty chats (configurable)
     - Generates descriptive filenames (configurable)
     - Applies content cleaning and filtering
+    - Strips steering/included rules blocks (unless keep_steering=True)
     - Optional sensitive data sanitization
 
     Args:
@@ -715,6 +722,7 @@ def export_project_chats(
         api_key: OpenRouter API key for LLM title generation (optional).
         sanitize: Override .env sanitization setting (True/False/None).
         source: Chat source type (Claude Desktop or Kiro IDE).
+        keep_steering: Keep full steering content (overrides config if provided).
 
     Returns:
         List of exported file paths.
@@ -826,7 +834,8 @@ def export_project_chats(
                 if format_type == 'markdown':
                     content = export_chat_markdown(chat_data)
                 elif format_type == 'book':
-                    content = export_chat_book(chat_data, sanitize=sanitize)
+                    content = export_chat_book(chat_data, sanitize=sanitize,
+                                               keep_steering=keep_steering)
                 else:
                     content = export_chat_markdown(chat_data)
                 
@@ -853,7 +862,8 @@ def export_kiro_workspace(
     format_type: str = 'markdown',
     verbose: bool = False,
     sanitize: Optional[bool] = None,
-    kiro_data_dir: Optional[Path] = None
+    kiro_data_dir: Optional[Path] = None,
+    keep_steering: Optional[bool] = None
 ) -> List[Path]:
     """Export all sessions in a Kiro workspace to a directory.
     
@@ -867,6 +877,7 @@ def export_kiro_workspace(
         verbose: Include additional metadata (execution IDs, context items).
         sanitize: Override .env sanitization setting (True/False/None).
         kiro_data_dir: Path to kiro.kiroagent directory (for execution logs).
+        keep_steering: Keep full steering content (overrides config if provided).
         
     Returns:
         List of exported file paths.
@@ -932,7 +943,8 @@ def export_kiro_workspace(
                 if format_type == 'markdown':
                     content = export_chat_markdown(chat_data, verbose=verbose)
                 elif format_type == 'book':
-                    content = export_chat_book(chat_data, sanitize=sanitize)
+                    content = export_chat_book(chat_data, sanitize=sanitize,
+                                               keep_steering=keep_steering)
                 elif format_type == 'pretty':
                     content = export_chat_pretty(chat_data, verbose=verbose)
                 else:
@@ -1119,7 +1131,8 @@ def export_single_chat(
     chat_file: Path,
     format_type: str = 'markdown',
     output_dir: Optional[Path] = None,
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    keep_steering: Optional[bool] = None
 ) -> Path:
     """Export a single chat file to markdown or book format.
     
@@ -1221,7 +1234,7 @@ def export_single_chat(
         # Write content directly using already-loaded (and enriched) chat_data
         # instead of calling export_chat_to_file which would re-load without enrichment
         if format_type == 'book':
-            content = export_chat_book(chat_data)
+            content = export_chat_book(chat_data, keep_steering=keep_steering)
         elif format_type == 'markdown':
             content = export_chat_markdown(chat_data)
         elif format_type == 'pretty':
@@ -1245,7 +1258,8 @@ def export_project_wiki(
     use_llm: bool = True,
     api_key: Optional[str] = None,
     update_mode: str = 'new',
-    sanitize: Optional[bool] = None
+    sanitize: Optional[bool] = None,
+    keep_steering: Optional[bool] = None
 ) -> None:
     """Export entire project as single wiki file with AI-generated titles.
 
@@ -1256,6 +1270,7 @@ def export_project_wiki(
         api_key: OpenRouter API key (required if use_llm=True).
         update_mode: Mode: 'new', 'update', or 'rebuild'.
         sanitize: Override .env sanitization setting (True/False/None).
+        keep_steering: Keep full steering content (overrides config if provided).
 
     Raises:
         ExportError: If export operation fails.
@@ -1283,7 +1298,8 @@ def export_project_wiki(
 
         # Generate wiki
         project_name = clean_project_name(project_path.name)
-        wiki_gen = WikiGenerator(llm_client=llm_client, sanitize=sanitize)
+        wiki_gen = WikiGenerator(llm_client=llm_client, sanitize=sanitize,
+                                 keep_steering=keep_steering)
 
         # Pass existing wiki file for update/rebuild modes
         existing_wiki = output_file if update_mode in ['update', 'rebuild'] else None

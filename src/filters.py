@@ -21,7 +21,8 @@ class ChatFilter:
         min_words: int = 75,
         skip_keywords: List[str] = None,
         require_content: bool = False,
-        filter_system_tags: bool = True
+        filter_system_tags: bool = True,
+        keep_steering: bool = False
     ) -> None:
         """Initialize chat filter with configuration.
 
@@ -32,6 +33,8 @@ class ChatFilter:
             skip_keywords: Keywords indicating trivial chats.
             require_content: Require code blocks or file references.
             filter_system_tags: Whether to strip system tags from user messages.
+            keep_steering: Whether to keep full steering/included rules content.
+                When False (default), steering blocks are replaced with a compact summary.
         """
         self.skip_trivial = skip_trivial
         self.min_messages = min_messages
@@ -39,6 +42,7 @@ class ChatFilter:
         self.skip_keywords = skip_keywords or ['warmup', 'test', 'hello', 'hi', 'ready']
         self.require_content = require_content
         self.filter_system_tags = filter_system_tags
+        self.keep_steering = keep_steering
 
     def is_pointless_chat(self, chat_data: List[Dict[str, Any]]) -> bool:
         """Check if a chat is trivial/pointless and should be filtered out.
@@ -146,6 +150,12 @@ class ChatFilter:
         # Handle steering-reminder blocks specially - extract file names and summarize
         cleaned = self._summarize_steering_reminders(text)
 
+        # Handle "Included Rules" blocks from Kiro exports
+        cleaned = self._strip_included_rules(cleaned)
+
+        # Handle <EnvironmentContext> blocks from Kiro exports
+        cleaned = self._strip_environment_context(cleaned)
+
         # Known system tag patterns to remove completely
         system_patterns = [
             r'<ide_opened_file>.*?</ide_opened_file>',
@@ -203,6 +213,84 @@ class ChatFilter:
             # Only add summary once, at the start of the cleaned text
             cleaned = summary + cleaned.strip()
         
+        return cleaned
+
+    def _strip_included_rules(self, text: str) -> str:
+        """Strip or summarize 'Included Rules' blocks from Kiro chat exports.
+
+        Kiro injects steering files into user messages as blocks like:
+            ## Included Rules (name.md) [Global]
+            ...boilerplate preamble...
+            <user-rule id=name.md>
+            ```
+            ...full rule content...
+            ```
+            </user-rule>
+
+        When keep_steering is False (default), these blocks are replaced with
+        a compact summary listing the rule file names.
+        When keep_steering is True, the full content is preserved.
+
+        Args:
+            text: Text that may contain Included Rules blocks.
+
+        Returns:
+            Text with Included Rules blocks stripped or preserved.
+        """
+        if self.keep_steering:
+            return text
+
+        # Pattern to match full "Included Rules" blocks:
+        # Starts with "## Included Rules (name) [scope]" header
+        # Ends with "</user-rule>" closing tag
+        included_rules_pattern = (
+            r'##\s*Included Rules\s*\(([^)]+)\)\s*\[([^\]]+)\]'
+            r'.*?'
+            r'</user-rule>'
+        )
+
+        matches = list(re.finditer(included_rules_pattern, text, flags=re.DOTALL))
+
+        if not matches:
+            return text
+
+        # Collect rule names and scopes
+        rule_names = []
+        for match in matches:
+            name = match.group(1).strip()
+            rule_names.append(name)
+
+        # Remove all matched blocks
+        cleaned = re.sub(included_rules_pattern, '', text, flags=re.DOTALL)
+
+        # Add compact summary if we found rule names
+        if rule_names:
+            unique_names = sorted(set(rule_names))
+            summary = f'*[Steering files included: {", ".join(unique_names)}]*\n\n'
+            # Prepend summary to remaining content
+            cleaned = summary + cleaned.strip()
+
+        return cleaned
+
+    def _strip_environment_context(self, text: str) -> str:
+        """Strip <EnvironmentContext> blocks from Kiro chat exports.
+
+        Kiro injects environment context (open files, active editor) into
+        user messages. This is IDE metadata, not user content.
+
+        Args:
+            text: Text that may contain EnvironmentContext blocks.
+
+        Returns:
+            Text with EnvironmentContext blocks removed.
+        """
+        if self.keep_steering:
+            return text
+
+        cleaned = re.sub(
+            r'<EnvironmentContext>.*?</EnvironmentContext>',
+            '', text, flags=re.DOTALL
+        )
         return cleaned
 
     def clean_user_message(self, text: str) -> Optional[str]:

@@ -253,6 +253,11 @@ Environment Variables:
     sanitize_group.add_argument('--sanitize-report', metavar='FILE', type=Path,
                                help='Generate sanitization report to specified file')
 
+    # Content filtering options
+    filter_group = parser.add_argument_group('Content Filtering')
+    filter_group.add_argument('--keep-steering', action='store_true',
+                              help='Keep full steering/included rules content in exports (default: strip to summary)')
+
     args = parser.parse_args()
 
     # Validate mutually exclusive sanitization options
@@ -366,7 +371,8 @@ Environment Variables:
                         use_llm,
                         api_key,
                         update_mode=mode,
-                        sanitize=sanitize_enabled
+                        sanitize=sanitize_enabled,
+                        keep_steering=args.keep_steering if args.keep_steering else None
                     )
 
                     size = wiki_output.stat().st_size
@@ -412,7 +418,8 @@ Environment Variables:
                         project_info.path,
                         export_dir,
                         args.format,
-                        sanitize=sanitize_enabled
+                        sanitize=sanitize_enabled,
+                        keep_steering=args.keep_steering if args.keep_steering else None
                     )
                     print_colored(f"✅ Exported {len(exported_files)} chats to: {export_dir}/", Colors.GREEN)
                     for file in exported_files:
