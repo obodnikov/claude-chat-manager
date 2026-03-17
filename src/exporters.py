@@ -301,6 +301,49 @@ def _load_chat_data(
         raise ExportError(f"Failed to load chat data from {file_path}: {e}")
 
 
+def _extract_title_from_user_content(
+    text: str,
+    chat_filter: Optional[ChatFilter] = None,
+    max_length: int = 60
+) -> Optional[str]:
+    """Extract a meaningful title from user message content.
+
+    Strips steering/system tags and skips summary markers to find
+    the first line of actual user content.
+
+    Args:
+        text: Raw or pre-extracted user message text.
+        chat_filter: Optional ChatFilter for cleaning. If None, a default is created.
+        max_length: Maximum title length before truncation.
+
+    Returns:
+        Extracted title string, or None if no meaningful content found.
+    """
+    if not text or not text.strip():
+        return None
+
+    # Clean steering/system tags
+    if chat_filter:
+        cleaned = chat_filter.clean_user_message(text)
+    else:
+        default_filter = ChatFilter(filter_system_tags=True, keep_steering=False)
+        cleaned = default_filter.clean_user_message(text)
+
+    if not cleaned:
+        return None
+
+    # Find first meaningful line (skip steering summary markers)
+    for line in cleaned.split('\n'):
+        line = line.strip()
+        if line and not line.startswith('*[Steering files included:'):
+            title = line[:max_length]
+            if len(line) > max_length:
+                title += "..."
+            return title
+
+    return None
+
+
 def _generate_filename_from_content(chat_data: List[Dict[str, Any]], fallback: str, source: ChatSource) -> str:
     """Generate filename from chat content (session title or first message).
     
@@ -317,6 +360,10 @@ def _generate_filename_from_content(chat_data: List[Dict[str, Any]], fallback: s
     
     title = None
     
+    # Use a minimal ChatFilter to strip steering/system tags from the first message
+    # so filenames reflect actual user content, not injected boilerplate
+    name_filter = ChatFilter(filter_system_tags=True, keep_steering=False)
+    
     # Extract first user message
     for entry in chat_data:
         message = entry.get('message', {})
@@ -325,12 +372,9 @@ def _generate_filename_from_content(chat_data: List[Dict[str, Any]], fallback: s
         if role in ('user', 'human'):
             content = message.get('content', '')
             if isinstance(content, str) and content.strip():
-                # Use first line or first 60 chars
-                first_line = content.split('\n')[0]
-                title = first_line[:60].strip()
-                if len(first_line) > 60:
-                    title += "..."
-                break
+                title = _extract_title_from_user_content(content, name_filter)
+                if title:
+                    break
     
     # Use fallback if no title found
     if not title:
@@ -1085,12 +1129,9 @@ def _generate_book_filename(
                     text = str(content)
 
                 if text:
-                    # Use first line or first 60 chars
-                    first_line = text.split('\n')[0]
-                    title = first_line[:60].strip()
-                    if len(first_line) > 60:
-                        title += "..."
-                    break
+                    title = _extract_title_from_user_content(text, chat_filter)
+                    if title:
+                        break
 
     # Last resort: use filename
     if not title:

@@ -375,3 +375,124 @@ How do I fix the login bug?"""
         assert result is not None
         assert "How do I fix the login bug?" in result
         assert "<user-rule" not in result
+
+
+class TestExtractTitleFromUserContent:
+    """Tests for _extract_title_from_user_content helper."""
+
+    def test_plain_text_returns_first_line(self):
+        """Plain text should return the first line as title."""
+        from src.exporters import _extract_title_from_user_content
+        result = _extract_title_from_user_content("How do I fix the login bug?")
+        assert result == "How do I fix the login bug?"
+
+    def test_steering_content_returns_actual_question(self):
+        """Text with steering blocks should return the actual user question."""
+        from src.exporters import _extract_title_from_user_content
+        text = """## Included Rules (Global/jira-safety.md) [Global]
+  I am providing you some additional guidance...
+<user-rule id=Global/jira-safety.md>
+```
+# JIRA Safety Rules
+Content
+```
+</user-rule>
+
+Global/jira-safety.mdtalk with me about JIRA ticket EEAEPP-115211"""
+
+        result = _extract_title_from_user_content(text)
+        assert result is not None
+        assert "talk with me about JIRA ticket" in result
+        assert "Included Rules" not in result
+
+    def test_empty_text_returns_none(self):
+        """Empty or whitespace-only text should return None."""
+        from src.exporters import _extract_title_from_user_content
+        assert _extract_title_from_user_content("") is None
+        assert _extract_title_from_user_content("   ") is None
+        assert _extract_title_from_user_content(None) is None
+
+    def test_only_steering_returns_none(self):
+        """Text that is only a short system tag should return None."""
+        from src.exporters import _extract_title_from_user_content
+        text = "<system-reminder>x</system-reminder>"
+        result = _extract_title_from_user_content(text)
+        assert result is None
+
+    def test_truncation_at_max_length(self):
+        """Long lines should be truncated with ellipsis."""
+        from src.exporters import _extract_title_from_user_content
+        long_text = "A" * 100
+        result = _extract_title_from_user_content(long_text, max_length=60)
+        assert len(result) == 63  # 60 + "..."
+        assert result.endswith("...")
+
+    def test_with_chat_filter_provided(self):
+        """Should use the provided ChatFilter instance."""
+        from src.exporters import _extract_title_from_user_content
+        from src.filters import ChatFilter
+        f = ChatFilter(filter_system_tags=True, keep_steering=False)
+        text = """<system-reminder>stuff</system-reminder>
+
+My actual question here"""
+        result = _extract_title_from_user_content(text, chat_filter=f)
+        assert result == "My actual question here"
+
+
+class TestFilenameGenerationWithSteering:
+    """Tests for filename generation functions with steering content."""
+
+    def test_generate_filename_skips_steering(self):
+        """_generate_filename_from_content should use actual question, not steering."""
+        from src.exporters import _generate_filename_from_content
+        from src.models import ChatSource
+
+        chat_data = [{
+            'message': {
+                'role': 'user',
+                'content': """## Included Rules (Global/jira-safety.md) [Global]
+  Guidance...
+<user-rule id=Global/jira-safety.md>
+```
+Content
+```
+</user-rule>
+
+talk with me about JIRA ticket EEAEPP-115211"""
+            }
+        }]
+
+        result = _generate_filename_from_content(chat_data, 'fallback', ChatSource.KIRO_IDE)
+        assert 'jira-safety' not in result
+        assert 'included-rules' not in result
+        assert 'talk-with-me-about-jira-ticket' in result
+
+    def test_generate_filename_fallback_when_only_steering(self):
+        """Should use fallback when message is only steering with no real content."""
+        from src.exporters import _generate_filename_from_content
+        from src.models import ChatSource
+
+        chat_data = [{
+            'message': {
+                'role': 'user',
+                'content': "<system-reminder>x</system-reminder>"
+            }
+        }]
+
+        result = _generate_filename_from_content(chat_data, 'my-fallback', ChatSource.KIRO_IDE)
+        assert result == 'my-fallback'
+
+    def test_generate_filename_no_steering_works_normally(self):
+        """Without steering, should work as before."""
+        from src.exporters import _generate_filename_from_content
+        from src.models import ChatSource
+
+        chat_data = [{
+            'message': {
+                'role': 'user',
+                'content': 'How do I fix the login bug?'
+            }
+        }]
+
+        result = _generate_filename_from_content(chat_data, 'fallback', ChatSource.KIRO_IDE)
+        assert 'how-do-i-fix-the-login-bug' in result
