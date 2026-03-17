@@ -163,6 +163,47 @@ Question"""
         assert "Global/confluence-mcp.md" in result
         assert "Question" in result
 
+    def test_bare_name_references_stripped(self):
+        """Bare steering file names left after blocks should be removed."""
+        text = """## Included Rules (Global/jira-safety.md) [Global]
+  I am providing you some additional guidance...
+<user-rule id=Global/jira-safety.md>
+```
+# JIRA Safety Rules
+Content
+```
+</user-rule>
+
+## Included Rules (ericsson/EEA_JIRA.md) [Workspace]
+  I am providing you some additional guidance...
+<user-rule id=ericsson/EEA_JIRA.md>
+```
+# EEA JIRA Knowledge
+Content
+```
+</user-rule>
+
+## Included Rules (Global/confluence-mcp.md) [Global]
+  I am providing you some additional guidance...
+<user-rule id=Global/confluence-mcp.md>
+```
+# Confluence Rules
+Content
+```
+</user-rule>
+
+Global/jira-safety.mdericsson/EEA_JIRA.mdGlobal/confluence-mcp.mdtalk with me about JIRA ticket EEAEPP-115211"""
+
+        result = self.filter._strip_included_rules(text)
+
+        # Summary should be present
+        assert "*[Steering files included:" in result
+        assert "Global/jira-safety.md" in result
+        # Bare name references should be gone
+        assert "Global/jira-safety.mdericsson" not in result
+        # Actual user question should be preserved
+        assert "talk with me about JIRA ticket EEAEPP-115211" in result
+
 
 class TestStripEnvironmentContext:
     """Tests for _strip_environment_context method."""

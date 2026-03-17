@@ -263,9 +263,17 @@ class ChatFilter:
         # Remove all matched blocks
         cleaned = re.sub(included_rules_pattern, '', text, flags=re.DOTALL)
 
-        # Add compact summary if we found rule names
+        # Remove bare steering file name references that Kiro leaves after the blocks.
+        # These appear as concatenated names like "Global/jira-safety.mdericsson/EEA_JIRA.md"
+        # We escape each name and build a pattern that matches them in any order,
+        # possibly separated by whitespace.
         if rule_names:
             unique_names = sorted(set(rule_names))
+            escaped_names = [re.escape(name) for name in unique_names]
+            # Match any sequence of these names (with optional whitespace between them)
+            bare_names_pattern = r'(?:\s*(?:' + '|'.join(escaped_names) + r'))+\s*'
+            cleaned = re.sub(bare_names_pattern, '\n', cleaned)
+
             summary = f'*[Steering files included: {", ".join(unique_names)}]*\n\n'
             # Prepend summary to remaining content
             cleaned = summary + cleaned.strip()
