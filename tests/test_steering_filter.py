@@ -192,7 +192,8 @@ Content
 ```
 </user-rule>
 
-Global/jira-safety.mdericsson/EEA_JIRA.mdGlobal/confluence-mcp.mdtalk with me about JIRA ticket EEAEPP-115211"""
+Global/jira-safety.mdericsson/EEA_JIRA.mdGlobal/confluence-mcp.md
+talk with me about JIRA ticket EEAEPP-115211"""
 
         result = self.filter._strip_included_rules(text)
 
@@ -203,6 +204,43 @@ Global/jira-safety.mdericsson/EEA_JIRA.mdGlobal/confluence-mcp.mdtalk with me ab
         assert "Global/jira-safety.mdericsson" not in result
         # Actual user question should be preserved
         assert "talk with me about JIRA ticket EEAEPP-115211" in result
+
+    def test_legitimate_filename_reference_preserved(self):
+        """User text that legitimately references a rule filename should be preserved."""
+        text = """## Included Rules (Global/jira-safety.md) [Global]
+  I am providing you some additional guidance...
+<user-rule id=Global/jira-safety.md>
+```
+# JIRA Safety Rules
+Content
+```
+</user-rule>
+
+Can you compare Global/jira-safety.md with our old policy document?"""
+
+        result = self.filter._strip_included_rules(text)
+
+        # Summary should be present
+        assert "*[Steering files included: Global/jira-safety.md]*" in result
+        # The legitimate user reference must be preserved
+        assert "compare Global/jira-safety.md with our old policy document?" in result
+
+    def test_filename_as_substring_not_altered(self):
+        """Filenames appearing as substrings inside larger tokens should not be altered."""
+        text = """## Included Rules (safety.md) [Global]
+  I am providing you some additional guidance...
+<user-rule id=safety.md>
+```
+Content
+```
+</user-rule>
+
+Check the file my-safety.md-backup for the old version."""
+
+        result = self.filter._strip_included_rules(text)
+
+        # The substring occurrence inside a larger token must survive
+        assert "my-safety.md-backup" in result
 
 
 class TestStripEnvironmentContext:
@@ -338,6 +376,32 @@ Question"""
         # System tags still stripped (keep_steering only affects steering/env)
         assert "<system-reminder>" not in result
         assert "Question" in result
+
+    def test_keep_steering_preserves_steering_reminders(self):
+        """With keep_steering=True, steering-reminder blocks are preserved verbatim."""
+        text = """<steering-reminder>
+confirm-before-action.md:
+# Confirm Before Action
+Rule content here
+
+start.md:
+Some steering content
+</steering-reminder>
+
+My actual question about the code."""
+
+        f = ChatFilter(filter_system_tags=True, keep_steering=True)
+        result = f.strip_system_tags(text)
+
+        # Steering-reminder block should be fully preserved
+        assert "<steering-reminder>" in result
+        assert "confirm-before-action.md:" in result
+        assert "# Confirm Before Action" in result
+        assert "start.md:" in result
+        # No summary replacement should appear
+        assert "*[Steering files included:" not in result
+        # User content preserved
+        assert "My actual question about the code." in result
 
     def test_clean_user_message_with_only_steering(self):
         """Message that is only steering content should return None."""

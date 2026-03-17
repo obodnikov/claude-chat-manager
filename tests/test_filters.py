@@ -125,6 +125,20 @@ Content
         # Find the summary line
         assert "alpha-config.md, middle-file.md, zebra-rules.md" in result
 
+    def test_keep_steering_preserves_steering_reminders(self):
+        """When keep_steering=True, steering-reminder blocks should be preserved verbatim."""
+        filter_keep = ChatFilter(filter_system_tags=True, keep_steering=True)
+        text = """<steering-reminder>
+confirm-before-action.md:
+# Confirm Before Action
+Some content here...
+</steering-reminder>
+
+What is the status of ticket ABC-123?"""
+
+        result = filter_keep._summarize_steering_reminders(text)
+        assert result == text
+
     def test_strip_system_tags_includes_steering_summary(self):
         """strip_system_tags should process steering reminders."""
         text = """<steering-reminder>

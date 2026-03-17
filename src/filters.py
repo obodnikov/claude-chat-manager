@@ -180,12 +180,18 @@ class ChatFilter:
         Extracts steering file names from the block content and replaces
         the full content with a brief mention.
 
+        When keep_steering is True, the full content is preserved verbatim.
+
         Args:
             text: Text that may contain steering-reminder blocks.
 
         Returns:
-            Text with steering blocks replaced by summaries.
+            Text with steering blocks replaced by summaries, or unchanged
+            if keep_steering is True.
         """
+        if self.keep_steering:
+            return text
+
         # Pattern to match steering-reminder blocks
         steering_pattern = r'<steering-reminder>(.*?)</steering-reminder>'
         
@@ -260,19 +266,32 @@ class ChatFilter:
             name = match.group(1).strip()
             rule_names.append(name)
 
-        # Remove all matched blocks
+        # Remove all matched blocks, tracking where the last one ended
+        # so we can target the bare-name artifact that Kiro leaves immediately after.
+        last_block_end = 0
+        for match in matches:
+            if match.end() > last_block_end:
+                last_block_end = match.end()
+
         cleaned = re.sub(included_rules_pattern, '', text, flags=re.DOTALL)
 
         # Remove bare steering file name references that Kiro leaves after the blocks.
         # These appear as concatenated names like "Global/jira-safety.mdericsson/EEA_JIRA.md"
-        # We escape each name and build a pattern that matches them in any order,
-        # possibly separated by whitespace.
+        # immediately after the last removed block.
+        #
+        # IMPORTANT: We only strip a standalone line that is composed entirely of
+        # concatenated rule names (with optional whitespace). This avoids removing
+        # legitimate user references to these filenames elsewhere in the message.
         if rule_names:
             unique_names = sorted(set(rule_names))
             escaped_names = [re.escape(name) for name in unique_names]
-            # Match any sequence of these names (with optional whitespace between them)
-            bare_names_pattern = r'(?:\s*(?:' + '|'.join(escaped_names) + r'))+\s*'
-            cleaned = re.sub(bare_names_pattern, '\n', cleaned)
+            # Match a line that consists ONLY of concatenated rule names
+            # (with optional whitespace between them), anchored to line boundaries.
+            bare_line_pattern = (
+                r'^\s*(?:' + '|'.join(escaped_names) + r')(?:\s*(?:'
+                + '|'.join(escaped_names) + r'))*\s*$'
+            )
+            cleaned = re.sub(bare_line_pattern, '', cleaned, flags=re.MULTILINE)
 
             summary = f'*[Steering files included: {", ".join(unique_names)}]*\n\n'
             # Prepend summary to remaining content
