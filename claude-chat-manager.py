@@ -6,6 +6,7 @@ chat files with an intuitive interface and Unix less-like paging.
 """
 
 import sys
+import os
 import argparse
 import logging
 from pathlib import Path
@@ -276,7 +277,6 @@ Environment Variables:
     # Setup logging
     if args.verbose:
         config._load_config()  # Reload with verbose
-        import os
         os.environ['CLAUDE_LOG_LEVEL'] = 'DEBUG'
 
     setup_logging()
@@ -290,6 +290,7 @@ Environment Variables:
         logger.warning(warning)
 
     # Convert source argument to ChatSource enum
+    # Precedence: --source CLI flag > CHAT_SOURCE env > auto-detect
     source_filter = None
     source_explicit = args.source is not None  # User explicitly passed --source
     if args.source == 'claude':
@@ -312,18 +313,29 @@ Environment Variables:
 
     # Handle command line arguments
     try:
-        # If no --source specified: auto-detect available sources
+        # If no --source specified: consult CHAT_SOURCE env, then auto-detect
         if not source_explicit:
-            if args.project:
-                # Project name given without --source: search all sources
+            env_is_set = config.is_chat_source_set
+            is_non_interactive_cmd = args.list or args.search or args.content or args.recent is not None
+
+            if env_is_set:
+                # CHAT_SOURCE env is explicitly configured — use it (no menu)
+                source_filter = config.chat_source_filter  # None for 'all', ChatSource for others
+                raw_val = os.getenv('CHAT_SOURCE', '')
+                logger.info(f"Using CHAT_SOURCE env: {raw_val}")
+            elif args.project:
+                # Project name given without --source or env: search all sources
+                source_filter = None
+            elif is_non_interactive_cmd:
+                # Non-interactive command (-l, -s, -r, -c): default to all sources
                 source_filter = None
             else:
-                # No project, no source: show source selection menu
+                # Interactive mode, no env set: show source selection menu
                 from src.cli import detect_and_select_source
-                source_filter = detect_and_select_source()
-                if source_filter is False:
-                    # User quit from source selection
+                selection = detect_and_select_source()
+                if selection.quit:
                     sys.exit(0)
+                source_filter = selection.source
 
         if args.list:
             display_projects_list(source_filter)

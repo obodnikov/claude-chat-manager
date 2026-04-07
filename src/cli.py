@@ -12,7 +12,7 @@ import logging
 
 from .config import config
 from .colors import Colors, print_colored
-from .models import ProjectInfo, ChatSource
+from .models import ProjectInfo, ChatSource, SourceSelection
 from .projects import (
     list_all_projects,
     find_project_by_name,
@@ -71,7 +71,7 @@ def _detect_available_sources() -> list:
             )
             if count > 0:
                 available.append((ChatSource.CLAUDE_DESKTOP, count))
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.warning(f"Error scanning Claude Desktop projects: {e}")
 
     # Check Kiro IDE
@@ -81,7 +81,7 @@ def _detect_available_sources() -> list:
             workspaces = discover_kiro_workspaces(config.kiro_data_dir)
             if workspaces:
                 available.append((ChatSource.KIRO_IDE, len(workspaces)))
-        except Exception as e:
+        except (OSError, ImportError, ValueError) as e:
             logger.warning(f"Error scanning Kiro IDE projects: {e}")
 
     # Check Codex CLI
@@ -91,7 +91,7 @@ def _detect_available_sources() -> list:
             workspaces = discover_codex_workspaces(config.codex_data_dir)
             if workspaces:
                 available.append((ChatSource.CODEX, len(workspaces)))
-        except Exception as e:
+        except (OSError, ImportError, ValueError) as e:
             logger.warning(f"Error scanning Codex CLI projects: {e}")
 
     return available
@@ -108,11 +108,12 @@ def _source_icon(source: ChatSource) -> str:
     return "❓ Unknown"
 
 
-def detect_and_select_source():
+def detect_and_select_source() -> SourceSelection:
     """Auto-detect available sources and let user pick one.
 
     Returns:
-        ChatSource enum value, None (for all sources), or False if user quit.
+        SourceSelection with source set to the chosen ChatSource (or None for all),
+        or quit=True if the user chose to exit.
     """
     print_colored("🔍 Detecting available chat sources...", Colors.BLUE)
     print()
@@ -126,14 +127,14 @@ def detect_and_select_source():
         print("  • Claude Desktop — install Claude and create projects")
         print("  • Kiro IDE — use Kiro IDE with agent chats")
         print("  • Codex CLI — use OpenAI Codex CLI")
-        return False
+        return SourceSelection(quit=True)
 
     # If only one source exists, use it directly
     if len(available) == 1:
         source, count = available[0]
         print_colored(f"Found: {_source_icon(source)} ({count} projects)", Colors.GREEN)
         print()
-        return source
+        return SourceSelection(source=source)
 
     # Multiple sources — show selection menu
     print_colored("Available sources:", Colors.CYAN)
@@ -155,7 +156,7 @@ def detect_and_select_source():
 
             if choice.lower() in ['q', 'quit']:
                 print_colored("👋 Goodbye!", Colors.BLUE)
-                return False
+                return SourceSelection(quit=True)
 
             if choice.isdigit():
                 num = int(choice)
@@ -164,19 +165,19 @@ def detect_and_select_source():
                     print()
                     print_colored(f"Selected: {_source_icon(source)}", Colors.GREEN)
                     print()
-                    return source
+                    return SourceSelection(source=source)
                 elif num == len(available) + 1:
                     print()
                     print_colored("Selected: All sources", Colors.GREEN)
                     print()
-                    return None
+                    return SourceSelection(source=None)
 
             print_colored(f"Invalid choice. Enter 1-{len(available) + 1} or q", Colors.RED)
 
         except (KeyboardInterrupt, EOFError):
             print()
             print_colored("👋 Goodbye!", Colors.BLUE)
-            return False
+            return SourceSelection(quit=True)
 
 
 def get_export_dirname(project_name: str, export_type: str) -> str:
