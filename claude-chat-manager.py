@@ -179,11 +179,11 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                           # Interactive project browser
-  %(prog)s -l                        # List all projects
+  %(prog)s                           # Auto-detect sources & interactive browser
+  %(prog)s -l                        # List all projects (auto-detect sources)
   %(prog)s -r 5                      # Show 5 most recent projects
   %(prog)s -s docker                 # Search for projects with 'docker' in name
-  %(prog)s "my-project"              # Browse project interactively
+  %(prog)s "my-project"              # Browse project (searches all sources)
   %(prog)s "my-project" -f book -o my-chats       # Export to directory 'my-chats/'
   %(prog)s "my-project" -f book -o exports/       # Export to 'exports/' directory
   %(prog)s "my-project" -f book -o chat.md        # Export to timestamped 'chat_YYYYMMDD_HHMMSS/' dir
@@ -191,9 +191,10 @@ Examples:
   %(prog)s "my-project" --wiki wiki.md --update   # Update existing wiki with new chats
   %(prog)s "my-project" --wiki wiki.md --rebuild  # Force full rebuild of existing wiki
   %(prog)s -c "update checker"                    # Search chat content
-  %(prog)s --source kiro                          # List Kiro IDE projects only
-  %(prog)s --source codex                         # List Codex CLI projects
-  %(prog)s --source all                           # List all sources (Claude + Kiro + Codex)
+  %(prog)s --source claude                        # Skip detection, Claude Desktop only
+  %(prog)s --source kiro                          # Skip detection, Kiro IDE only
+  %(prog)s --source codex                         # Skip detection, Codex CLI only
+  %(prog)s --source all                           # Skip detection, all sources
   %(prog)s --source kiro "my-project"             # Browse Kiro project
   %(prog)s --source codex "my-project"            # Browse Codex project
 
@@ -228,7 +229,7 @@ Environment Variables:
     parser.add_argument('-o', '--output', metavar='FILE', type=Path, help='Save output to file')
     parser.add_argument('-c', '--content', metavar='TERM', help='Search for content within chats')
     parser.add_argument('--source', choices=['claude', 'kiro', 'codex', 'all'],
-                        default='claude', help='Chat source to use: claude (default), kiro, codex, or all')
+                        default=None, help='Chat source: claude, kiro, codex, or all (omit to auto-detect)')
     parser.add_argument('--wiki', metavar='FILE', type=Path, help='Generate wiki page from all project chats (shortcut for -f wiki -o FILE)')
     parser.add_argument('--update', action='store_true', help='Update existing wiki file with new chats (use with --wiki)')
     parser.add_argument('--rebuild', action='store_true', help='Force full rebuild of existing wiki file (use with --wiki)')
@@ -283,8 +284,14 @@ Environment Variables:
 
     logger.info("Claude Chat Manager starting...")
 
+    # Validate LLM configuration and surface warnings early
+    llm_warnings = config.validate_llm_config()
+    for warning in llm_warnings:
+        logger.warning(warning)
+
     # Convert source argument to ChatSource enum
     source_filter = None
+    source_explicit = args.source is not None  # User explicitly passed --source
     if args.source == 'claude':
         source_filter = ChatSource.CLAUDE_DESKTOP
     elif args.source == 'kiro':
@@ -294,20 +301,30 @@ Environment Variables:
     elif args.source == 'all':
         source_filter = None  # None means all sources
 
-    # Check if Claude directory exists (only if we're scanning Claude)
-    if (source_filter is None or source_filter == ChatSource.CLAUDE_DESKTOP):
+    # Check if Claude directory exists (only when explicitly requesting Claude-only source)
+    if source_explicit and source_filter == ChatSource.CLAUDE_DESKTOP:
         if not config.claude_projects_dir.exists():
             print_colored(f"❌ Claude projects directory not found: {config.claude_projects_dir}", Colors.RED)
             print("Make sure you have Claude Desktop installed and have created projects.")
             print("\nYou can set a custom directory with:")
             print("  export CLAUDE_PROJECTS_DIR=/path/to/your/projects")
-            if source_filter == ChatSource.CLAUDE_DESKTOP:
-                sys.exit(1)
-            else:
-                print("\nContinuing with other sources...")
+            sys.exit(1)
 
     # Handle command line arguments
     try:
+        # If no --source specified: auto-detect available sources
+        if not source_explicit:
+            if args.project:
+                # Project name given without --source: search all sources
+                source_filter = None
+            else:
+                # No project, no source: show source selection menu
+                from src.cli import detect_and_select_source
+                source_filter = detect_and_select_source()
+                if source_filter is False:
+                    # User quit from source selection
+                    sys.exit(0)
+
         if args.list:
             display_projects_list(source_filter)
         elif args.search:
@@ -356,9 +373,9 @@ Environment Variables:
                     # Get API settings from config
                     # LLM is used only when both title generation and LLM are enabled
                     use_llm = config.wiki_generate_titles and config.wiki_use_llm_titles
-                    api_key = config.openrouter_api_key
+                    api_key = config.get_effective_api_key()
 
-                    if use_llm and not config.has_valid_api_key:
+                    if use_llm and not api_key:
                         print_colored("⚠️  OPENROUTER_API_KEY not set. Using first user question as titles.", Colors.YELLOW)
                         print("   Set OPENROUTER_API_KEY in .env to enable AI-generated titles.")
                         print("   Get your key at: https://openrouter.ai/keys")

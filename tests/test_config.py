@@ -83,10 +83,9 @@ class TestKiroConfig:
         assert config.kiro_data_dir == Path(custom_path)
 
     def test_chat_source_filter_default(self):
-        """Test default chat source filter (claude)."""
+        """Test default chat source filter (None = auto-detect)."""
         config = Config()
-        from src.models import ChatSource
-        assert config.chat_source_filter == ChatSource.CLAUDE_DESKTOP
+        assert config.chat_source_filter is None
 
     def test_chat_source_filter_claude(self, monkeypatch):
         """Test chat source filter set to claude."""
@@ -109,11 +108,10 @@ class TestKiroConfig:
         assert config.chat_source_filter is None
 
     def test_chat_source_filter_invalid(self, monkeypatch):
-        """Test invalid chat source filter falls back to claude."""
+        """Test invalid chat source filter falls back to None (auto-detect)."""
         monkeypatch.setenv('CHAT_SOURCE', 'invalid')
         config = Config()
-        from src.models import ChatSource
-        assert config.chat_source_filter == ChatSource.CLAUDE_DESKTOP
+        assert config.chat_source_filter is None
 
     def test_chat_source_filter_case_insensitive(self, monkeypatch):
         """Test chat source filter is case-insensitive."""

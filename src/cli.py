@@ -54,6 +54,131 @@ def _source_label(source: ChatSource) -> str:
     return "[?]     "
 
 
+def _detect_available_sources() -> list:
+    """Detect which chat sources have data on this machine.
+
+    Returns:
+        List of tuples (ChatSource, project_count) for sources with projects.
+    """
+    available = []
+
+    # Check Claude Desktop
+    if config.claude_projects_dir.exists():
+        try:
+            count = sum(
+                1 for d in config.claude_projects_dir.iterdir()
+                if d.is_dir() and any(d.glob('*.jsonl'))
+            )
+            if count > 0:
+                available.append((ChatSource.CLAUDE_DESKTOP, count))
+        except Exception as e:
+            logger.warning(f"Error scanning Claude Desktop projects: {e}")
+
+    # Check Kiro IDE
+    if config.validate_kiro_directory():
+        try:
+            from .kiro_projects import discover_kiro_workspaces
+            workspaces = discover_kiro_workspaces(config.kiro_data_dir)
+            if workspaces:
+                available.append((ChatSource.KIRO_IDE, len(workspaces)))
+        except Exception as e:
+            logger.warning(f"Error scanning Kiro IDE projects: {e}")
+
+    # Check Codex CLI
+    if config.validate_codex_directory():
+        try:
+            from .codex_projects import discover_codex_workspaces
+            workspaces = discover_codex_workspaces(config.codex_data_dir)
+            if workspaces:
+                available.append((ChatSource.CODEX, len(workspaces)))
+        except Exception as e:
+            logger.warning(f"Error scanning Codex CLI projects: {e}")
+
+    return available
+
+
+def _source_icon(source: ChatSource) -> str:
+    """Return emoji icon for a chat source."""
+    if source == ChatSource.CLAUDE_DESKTOP:
+        return "🖥️  Claude Desktop"
+    elif source == ChatSource.KIRO_IDE:
+        return "💡 Kiro IDE"
+    elif source == ChatSource.CODEX:
+        return "🔧 Codex CLI"
+    return "❓ Unknown"
+
+
+def detect_and_select_source():
+    """Auto-detect available sources and let user pick one.
+
+    Returns:
+        ChatSource enum value, None (for all sources), or False if user quit.
+    """
+    print_colored("🔍 Detecting available chat sources...", Colors.BLUE)
+    print()
+
+    available = _detect_available_sources()
+
+    if not available:
+        print_colored("❌ No chat sources found on this machine.", Colors.RED)
+        print()
+        print("Supported sources:")
+        print("  • Claude Desktop — install Claude and create projects")
+        print("  • Kiro IDE — use Kiro IDE with agent chats")
+        print("  • Codex CLI — use OpenAI Codex CLI")
+        return False
+
+    # If only one source exists, use it directly
+    if len(available) == 1:
+        source, count = available[0]
+        print_colored(f"Found: {_source_icon(source)} ({count} projects)", Colors.GREEN)
+        print()
+        return source
+
+    # Multiple sources — show selection menu
+    print_colored("Available sources:", Colors.CYAN)
+    print()
+
+    for i, (source, count) in enumerate(available, 1):
+        projects_word = "project" if count == 1 else "projects"
+        print(f"  {i}) {_source_icon(source):20s} ({count} {projects_word})")
+
+    total = sum(c for _, c in available)
+    print(f"  {len(available) + 1}) 📚 All sources          ({total} projects)")
+    print()
+    print("  q) Quit")
+    print()
+
+    while True:
+        try:
+            choice = input("Select source: ").strip()
+
+            if choice.lower() in ['q', 'quit']:
+                print_colored("👋 Goodbye!", Colors.BLUE)
+                return False
+
+            if choice.isdigit():
+                num = int(choice)
+                if 1 <= num <= len(available):
+                    source, count = available[num - 1]
+                    print()
+                    print_colored(f"Selected: {_source_icon(source)}", Colors.GREEN)
+                    print()
+                    return source
+                elif num == len(available) + 1:
+                    print()
+                    print_colored("Selected: All sources", Colors.GREEN)
+                    print()
+                    return None
+
+            print_colored(f"Invalid choice. Enter 1-{len(available) + 1} or q", Colors.RED)
+
+        except (KeyboardInterrupt, EOFError):
+            print()
+            print_colored("👋 Goodbye!", Colors.BLUE)
+            return False
+
+
 def get_export_dirname(project_name: str, export_type: str) -> str:
     """Generate export directory name with machine hostname and project name.
 
@@ -485,28 +610,36 @@ def interactive_browser(source_filter: Optional[ChatSource] = None) -> None:
                     print_colored("👋 Goodbye!", Colors.BLUE)
                     return
                 elif choice.lower() == 's':
-                    # Switch source filter
+                    # Switch source filter — reuse detection menu
                     print()
+                    available = _detect_available_sources()
+                    if not available:
+                        print_colored("No sources found.", Colors.RED)
+                        input("Press Enter to continue...")
+                        menu_active = False
+                        continue
+
                     print_colored("Select source:", Colors.YELLOW)
-                    print("  1) Claude Desktop only")
-                    print("  2) Kiro IDE only")
-                    print("  3) Codex CLI only")
-                    print("  4) All sources")
                     print()
-                    source_choice = input("Enter choice (1-4): ").strip()
-                    
-                    if source_choice == '1':
-                        source_filter = ChatSource.CLAUDE_DESKTOP
-                        print_colored("Switched to Claude Desktop only", Colors.GREEN)
-                    elif source_choice == '2':
-                        source_filter = ChatSource.KIRO_IDE
-                        print_colored("Switched to Kiro IDE only", Colors.GREEN)
-                    elif source_choice == '3':
-                        source_filter = ChatSource.CODEX
-                        print_colored("Switched to Codex CLI only", Colors.GREEN)
-                    elif source_choice == '4':
-                        source_filter = None
-                        print_colored("Switched to all sources", Colors.GREEN)
+                    for i, (src, count) in enumerate(available, 1):
+                        projects_word = "project" if count == 1 else "projects"
+                        print(f"  {i}) {_source_icon(src):20s} ({count} {projects_word})")
+                    total = sum(c for _, c in available)
+                    print(f"  {len(available) + 1}) 📚 All sources          ({total} projects)")
+                    print()
+
+                    source_choice = input(f"Enter choice (1-{len(available) + 1}): ").strip()
+
+                    if source_choice.isdigit():
+                        num = int(source_choice)
+                        if 1 <= num <= len(available):
+                            source_filter = available[num - 1][0]
+                            print_colored(f"Switched to {_source_icon(source_filter)}", Colors.GREEN)
+                        elif num == len(available) + 1:
+                            source_filter = None
+                            print_colored("Switched to all sources", Colors.GREEN)
+                        else:
+                            print_colored("Invalid choice, keeping current filter", Colors.RED)
                     else:
                         print_colored("Invalid choice, keeping current filter", Colors.RED)
                     
