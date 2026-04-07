@@ -82,3 +82,15 @@ class ChatMessage:
     source: ChatSource = ChatSource.UNKNOWN
     execution_id: Optional[str] = None
     context_items: Optional[List[dict]] = None
+
+
+@dataclass
+class SourceSelection:
+    """Result of source auto-detection and user selection.
+
+    Attributes:
+        source: Selected ChatSource, or None meaning all sources.
+        quit: True if the user chose to quit instead of selecting.
+    """
+    source: Optional[ChatSource] = None
+    quit: bool = False

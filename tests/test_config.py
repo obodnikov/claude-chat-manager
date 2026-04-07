@@ -120,6 +120,29 @@ class TestKiroConfig:
         from src.models import ChatSource
         assert config.chat_source_filter == ChatSource.KIRO_IDE
 
+    def test_is_chat_source_set_when_unset(self):
+        """is_chat_source_set returns False when CHAT_SOURCE is not set."""
+        config = Config()
+        assert config.is_chat_source_set is False
+
+    def test_is_chat_source_set_when_claude(self, monkeypatch):
+        """is_chat_source_set returns True for valid values."""
+        monkeypatch.setenv('CHAT_SOURCE', 'claude')
+        config = Config()
+        assert config.is_chat_source_set is True
+
+    def test_is_chat_source_set_when_all(self, monkeypatch):
+        """is_chat_source_set returns True for 'all'."""
+        monkeypatch.setenv('CHAT_SOURCE', 'all')
+        config = Config()
+        assert config.is_chat_source_set is True
+
+    def test_is_chat_source_set_when_invalid(self, monkeypatch):
+        """is_chat_source_set returns False for invalid values."""
+        monkeypatch.setenv('CHAT_SOURCE', 'invalid')
+        config = Config()
+        assert config.is_chat_source_set is False
+
     def test_validate_kiro_directory_exists(self, tmp_path, monkeypatch):
         """Test validation succeeds when Kiro directory exists."""
         kiro_dir = tmp_path / 'kiro'

@@ -253,6 +253,16 @@ class Config:
             return None
 
     @property
+    def is_chat_source_set(self) -> bool:
+        """Check whether CHAT_SOURCE env var is explicitly configured.
+
+        Returns:
+            True if CHAT_SOURCE is set to a valid value (claude, kiro, codex, all).
+        """
+        source = os.getenv('CHAT_SOURCE', '').lower()
+        return source in ('claude', 'kiro', 'codex', 'all')
+
+    @property
     def default_export_format(self) -> str:
         """Get the default export format.
 
