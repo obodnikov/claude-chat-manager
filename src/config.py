@@ -237,20 +237,20 @@ class Config:
             - ChatSource.CLAUDE_DESKTOP: Show only Claude Desktop chats
             - ChatSource.KIRO_IDE: Show only Kiro IDE chats
             - ChatSource.CODEX: Show only Codex CLI chats
-            - None: Show all sources
+            - None: Show all sources (also the default when not configured)
         """
-        source = os.getenv('CHAT_SOURCE', 'claude').lower()
-        if source == 'claude':
+        source = os.getenv('CHAT_SOURCE', '').lower()
+        if not source or source == 'all':
+            return None  # None means show all / auto-detect
+        elif source == 'claude':
             return ChatSource.CLAUDE_DESKTOP
         elif source == 'kiro':
             return ChatSource.KIRO_IDE
         elif source == 'codex':
             return ChatSource.CODEX
-        elif source == 'all':
-            return None  # None means show all sources
         else:
-            logger.warning(f"Invalid CHAT_SOURCE: {source}, defaulting to 'claude'")
-            return ChatSource.CLAUDE_DESKTOP
+            logger.warning(f"Invalid CHAT_SOURCE: {source}, defaulting to auto-detect")
+            return None
 
     @property
     def default_export_format(self) -> str:
