@@ -367,11 +367,16 @@ class WikiGenerator:
                 # Find first meaningful line (skip steering summary markers)
                 for line in cleaned.split('\n'):
                     line = line.strip()
-                    if line and not line.startswith('*[Steering files included:'):
-                        title = line[:60].strip()
-                        if len(line) > 60:
-                            title += "..."
-                        return title
+                    # Skip empty lines and steering summary markers (case-insensitive,
+                    # tolerant of spacing/formatting variants)
+                    if not line:
+                        continue
+                    if line.lstrip('*').lstrip().lower().startswith('[steering files included'):
+                        continue
+                    title = line[:60].strip()
+                    if len(line) > 60:
+                        title += "..."
+                    return title
 
         # Last resort: use filename or generic title
         if chat_file:

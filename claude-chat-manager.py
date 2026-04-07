@@ -283,6 +283,11 @@ Environment Variables:
 
     logger.info("Claude Chat Manager starting...")
 
+    # Validate LLM configuration and surface warnings early
+    llm_warnings = config.validate_llm_config()
+    for warning in llm_warnings:
+        logger.warning(warning)
+
     # Convert source argument to ChatSource enum
     source_filter = None
     if args.source == 'claude':
@@ -356,9 +361,9 @@ Environment Variables:
                     # Get API settings from config
                     # LLM is used only when both title generation and LLM are enabled
                     use_llm = config.wiki_generate_titles and config.wiki_use_llm_titles
-                    api_key = config.openrouter_api_key
+                    api_key = config.get_effective_api_key()
 
-                    if use_llm and not config.has_valid_api_key:
+                    if use_llm and not api_key:
                         print_colored("⚠️  OPENROUTER_API_KEY not set. Using first user question as titles.", Colors.YELLOW)
                         print("   Set OPENROUTER_API_KEY in .env to enable AI-generated titles.")
                         print("   Get your key at: https://openrouter.ai/keys")

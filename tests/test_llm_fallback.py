@@ -432,3 +432,171 @@ class TestGetEffectiveApiKey:
         monkeypatch.setenv('OPENROUTER_API_KEY', '  config-key  ')
         config = Config()
         assert config.get_effective_api_key('  cli-key  ') == 'cli-key'
+
+
+class TestValidateLlmConfigPurity:
+    """Tests that validate_llm_config is pure (no side-effect logging)."""
+
+    def test_validate_does_not_log(self, monkeypatch):
+        """validate_llm_config returns warnings without logging them."""
+        monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
+        monkeypatch.setenv('WIKI_USE_LLM_TITLES', 'true')
+        monkeypatch.setenv('BOOK_USE_LLM_TITLES', 'false')
+
+        config = Config()
+
+        import logging
+        with patch('src.config.logger') as mock_logger:
+            warnings = config.validate_llm_config()
+            assert len(warnings) == 1
+            # Should NOT have called logger.warning
+            mock_logger.warning.assert_not_called()
+
+
+class TestSteeringMarkerVariants:
+    """Tests for tolerant steering summary marker detection in fallback titles."""
+
+    def test_fallback_skips_lowercase_steering_marker(self):
+        """Fallback skips lowercase steering marker."""
+        chat_data = [
+            {
+                'message': {
+                    'role': 'user',
+                    'content': (
+                        '*[steering files included: start.md]*\n'
+                        'Fix the bug'
+                    )
+                },
+                'timestamp': 1234567890
+            }
+        ]
+        wiki_gen = WikiGenerator(llm_client=None)
+        title = wiki_gen._generate_fallback_title(chat_data, None)
+        assert 'steering' not in title.lower()
+        assert 'bug' in title.lower()
+
+    def test_fallback_skips_marker_with_leading_spaces(self):
+        """Fallback skips steering marker with leading whitespace."""
+        chat_data = [
+            {
+                'message': {
+                    'role': 'user',
+                    'content': (
+                        '  *[Steering files included: rules.md]*\n'
+                        'Add logging'
+                    )
+                },
+                'timestamp': 1234567890
+            }
+        ]
+        wiki_gen = WikiGenerator(llm_client=None)
+        title = wiki_gen._generate_fallback_title(chat_data, None)
+        assert 'steering' not in title.lower()
+        assert 'logging' in title.lower()
+
+    def test_fallback_skips_marker_without_asterisks(self):
+        """Fallback skips steering marker without surrounding asterisks."""
+        chat_data = [
+            {
+                'message': {
+                    'role': 'user',
+                    'content': (
+                        '[Steering files included: config.md]\n'
+                        'Refactor the parser'
+                    )
+                },
+                'timestamp': 1234567890
+            }
+        ]
+        wiki_gen = WikiGenerator(llm_client=None)
+        title = wiki_gen._generate_fallback_title(chat_data, None)
+        assert 'steering' not in title.lower()
+        assert 'parser' in title.lower()
+
+    def test_fallback_skips_marker_mixed_case(self):
+        """Fallback skips steering marker with mixed case."""
+        chat_data = [
+            {
+                'message': {
+                    'role': 'user',
+                    'content': (
+                        '*[STEERING FILES INCLUDED: start.md]*\n'
+                        'Deploy to production'
+                    )
+                },
+                'timestamp': 1234567890
+            }
+        ]
+        wiki_gen = WikiGenerator(llm_client=None)
+        title = wiki_gen._generate_fallback_title(chat_data, None)
+        assert 'steering' not in title.lower()
+        assert 'production' in title.lower()
+
+
+class TestCliKeyNormalization:
+    """Tests for API key normalization in the CLI wiki export path."""
+
+    def test_get_effective_api_key_trims_whitespace_padded_key(self, monkeypatch):
+        """Whitespace-padded key in .env is trimmed by get_effective_api_key."""
+        monkeypatch.setenv('OPENROUTER_API_KEY', '  sk-or-v1-test  ')
+        config = Config()
+        key = config.get_effective_api_key()
+        assert key == 'sk-or-v1-test'
+        assert config.has_valid_api_key is True
+
+    def test_cli_wiki_path_uses_trimmed_key(self, monkeypatch):
+        """CLI wiki path gets a trimmed key via get_effective_api_key."""
+        monkeypatch.setenv('OPENROUTER_API_KEY', '  sk-or-v1-padded  ')
+        config = Config()
+        # Simulates what claude-chat-manager.py now does
+        api_key = config.get_effective_api_key()
+        assert api_key == 'sk-or-v1-padded'
+        # This key should be usable (non-empty after strip)
+        assert bool(api_key)
+
+
+class TestCliStartupValidation:
+    """Integration tests for LLM config validation at CLI startup."""
+
+    def test_startup_logs_warnings_when_no_api_key(self, monkeypatch):
+        """CLI startup surfaces validate_llm_config warnings via logger."""
+        monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
+        monkeypatch.setenv('WIKI_USE_LLM_TITLES', 'true')
+        monkeypatch.setenv('BOOK_USE_LLM_TITLES', 'true')
+
+        config = Config()
+        warnings = config.validate_llm_config()
+
+        # Simulate what claude-chat-manager.py main() does
+        import logging
+        mock_logger = MagicMock()
+        for warning in warnings:
+            mock_logger.warning(warning)
+
+        # Both warnings should have been logged by the caller
+        assert mock_logger.warning.call_count == 2
+        logged_messages = [call.args[0] for call in mock_logger.warning.call_args_list]
+        assert any('WIKI_USE_LLM_TITLES' in msg for msg in logged_messages)
+        assert any('BOOK_USE_LLM_TITLES' in msg for msg in logged_messages)
+
+    def test_startup_no_warnings_when_key_present(self, monkeypatch):
+        """CLI startup produces no warnings when API key is configured."""
+        monkeypatch.setenv('OPENROUTER_API_KEY', 'sk-or-v1-valid')
+        monkeypatch.setenv('WIKI_USE_LLM_TITLES', 'true')
+        monkeypatch.setenv('BOOK_USE_LLM_TITLES', 'true')
+
+        config = Config()
+        warnings = config.validate_llm_config()
+
+        assert warnings == []
+
+    def test_startup_no_warnings_when_llm_disabled(self, monkeypatch):
+        """CLI startup produces no warnings when LLM is disabled."""
+        monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
+        monkeypatch.setenv('WIKI_USE_LLM_TITLES', 'false')
+        monkeypatch.setenv('BOOK_USE_LLM_TITLES', 'false')
+
+        config = Config()
+        warnings = config.validate_llm_config()
+
+        assert warnings == []

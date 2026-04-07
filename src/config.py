@@ -206,6 +206,9 @@ class Config:
         *_USE_LLM_TITLES is the secondary strategy flag (use LLM vs fallback).
         Warnings only fire when both are true and the key is missing.
 
+        This method is pure — it returns warnings without logging them.
+        Callers are responsible for displaying or logging as appropriate.
+
         Returns:
             List of warning strings. Empty list means config is valid.
         """
@@ -222,9 +225,6 @@ class Config:
                 "BOOK_USE_LLM_TITLES is enabled but OPENROUTER_API_KEY is not set. "
                 "Book titles will fall back to first user question."
             )
-
-        for warning in warnings:
-            logger.warning(warning)
 
         return warnings
 
