@@ -348,6 +348,18 @@ You're absolutely right! Let me fix this...
 
 Without an API key, the tool falls back to using the first user question as the title.
 
+**Using Without LLM (No API Key):**
+
+LLM-powered titles are enabled by default, but the tool works fully without an API key. When no key is set, titles are generated from the first meaningful user message in each chat. To suppress the API key warning and explicitly opt out of LLM:
+
+```bash
+# .env — disable LLM for titles entirely
+WIKI_USE_LLM_TITLES=false
+BOOK_USE_LLM_TITLES=false
+```
+
+The fallback title generator strips steering content, system tags, and IDE notifications to extract a clean title from your actual question. All other features (filtering, export formats, sanitization, search) work identically with or without LLM.
+
 **Interactive Export (within the browser):**
 
 When browsing interactively without `-o`, you can still export from the project menu:
@@ -651,7 +663,7 @@ For yarn.lock, the recommendation is different from package-lock.json...
 # .env
 BOOK_SKIP_TRIVIAL=true              # Filter out trivial chats
 BOOK_GENERATE_TITLES=true           # Generate descriptive filenames
-BOOK_USE_LLM_TITLES=false          # Use AI for titles (requires API key)
+BOOK_USE_LLM_TITLES=true           # Use AI for titles (requires API key, default: true)
 BOOK_FILTER_SYSTEM_TAGS=true       # Remove system notifications
 BOOK_FILTER_TOOL_NOISE=true        # Remove tool execution details
 BOOK_SHOW_FILE_REFS=true           # Show modified files
@@ -1122,13 +1134,17 @@ CLAUDE_LOG_LEVEL=INFO
 # Default export format
 CLAUDE_DEFAULT_FORMAT=book
 
-# OpenRouter API for wiki generation (optional)
+# OpenRouter API for wiki generation (optional — tool works without it)
 OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxx
 OPENROUTER_MODEL=anthropic/claude-haiku-4.5
 
 # Wiki generation settings
 WIKI_TITLE_MAX_TOKENS=2000
 WIKI_GENERATE_TITLES=true
+WIKI_USE_LLM_TITLES=true            # Set to false to disable LLM for wiki titles
+
+# Book export settings
+BOOK_USE_LLM_TITLES=true            # Set to false to disable LLM for book titles
 ```
 
 **Important:** The `.env` file is loaded from the script's installation directory, not your current working directory. This means you can run the tool from anywhere and it will still use the same configuration.
@@ -1174,7 +1190,8 @@ The wiki feature transforms your entire project history into a single, well-orga
 **Configuration:**
 - **Model**: Default is `anthropic/claude-haiku-4.5` (fast, cost-effective, latest version)
 - **Token Limit**: Analyzes first 2000 tokens of each chat for title
-- **Fallback**: Automatically uses first user question if LLM fails
+- **Fallback**: Automatically uses first user question if LLM fails or is disabled
+- **No-LLM Mode**: Set `WIKI_USE_LLM_TITLES=false` and `BOOK_USE_LLM_TITLES=false` to skip LLM entirely
 - **Zero Dependencies**: Uses Python's standard library (no requests/httpx needed)
 - **Metadata Format**: `<!-- wiki-meta: chat_id=abc12345, timestamp=1704412800 -->`
 
