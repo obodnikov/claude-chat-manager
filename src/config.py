@@ -195,6 +195,39 @@ class Config:
             return False
         return True
 
+    def validate_llm_config(self) -> list:
+        """Validate LLM configuration consistency.
+
+        Checks whether LLM title generation is effectively enabled
+        (both *_GENERATE_TITLES and *_USE_LLM_TITLES are true) but
+        API key is missing or empty. Returns warnings for the caller.
+
+        *_GENERATE_TITLES is the primary feature flag (enable descriptive titles).
+        *_USE_LLM_TITLES is the secondary strategy flag (use LLM vs fallback).
+        Warnings only fire when both are true and the key is missing.
+
+        Returns:
+            List of warning strings. Empty list means config is valid.
+        """
+        warnings = []
+
+        if self.wiki_generate_titles and self.wiki_use_llm_titles and not self.has_valid_api_key:
+            warnings.append(
+                "WIKI_USE_LLM_TITLES is enabled but OPENROUTER_API_KEY is not set. "
+                "Wiki titles will fall back to first user question."
+            )
+
+        if self.book_generate_titles and self.book_use_llm_titles and not self.has_valid_api_key:
+            warnings.append(
+                "BOOK_USE_LLM_TITLES is enabled but OPENROUTER_API_KEY is not set. "
+                "Book titles will fall back to first user question."
+            )
+
+        for warning in warnings:
+            logger.warning(warning)
+
+        return warnings
+
     @property
     def chat_source_filter(self) -> Optional[ChatSource]:
         """Get configured chat source filter.
@@ -261,6 +294,36 @@ class Config:
         return os.getenv('OPENROUTER_API_KEY')
 
     @property
+    def has_valid_api_key(self) -> bool:
+        """Check if a valid (non-empty) OpenRouter API key is configured.
+
+        Handles edge cases like empty strings and whitespace-only values
+        that pass `is not None` but fail at runtime.
+
+        Returns:
+            True if API key is set and non-empty after stripping whitespace.
+        """
+        key = self.openrouter_api_key
+        return bool(key and key.strip())
+
+    def get_effective_api_key(self, override: str = None) -> str:
+        """Get the effective API key, preferring a non-empty override.
+
+        Normalizes both the override and config values, stripping whitespace.
+        Returns the first non-empty key found, or empty string if none.
+
+        Args:
+            override: Optional API key from CLI argument or direct caller.
+
+        Returns:
+            Stripped API key string, or empty string if none available.
+        """
+        candidate = (override or '').strip()
+        if candidate:
+            return candidate
+        return (self.openrouter_api_key or '').strip()
+
+    @property
     def openrouter_model(self) -> str:
         """Get the OpenRouter model to use.
 
@@ -308,12 +371,30 @@ class Config:
 
     @property
     def wiki_generate_titles(self) -> bool:
-        """Check if wiki title generation is enabled.
+        """Check if wiki should generate descriptive titles.
+
+        Controls whether wiki exports use descriptive titles at all.
+        When True, titles are generated (via LLM or fallback).
+        When False, generic titles like 'Chat abc12345' are used.
 
         Returns:
-            True if title generation should use LLM.
+            True if descriptive title generation is enabled.
         """
         value = os.getenv('WIKI_GENERATE_TITLES', 'true').lower()
+        return value in ('true', '1', 'yes', 'on')
+
+    @property
+    def wiki_use_llm_titles(self) -> bool:
+        """Check if wiki exports should use LLM for title generation.
+
+        When True (default), uses OpenRouter API to generate descriptive titles.
+        Requires OPENROUTER_API_KEY to be set. Falls back to first user question
+        if API key is missing or LLM call fails.
+
+        Returns:
+            True if LLM should be used for wiki titles.
+        """
+        value = os.getenv('WIKI_USE_LLM_TITLES', 'true').lower()
         return value in ('true', '1', 'yes', 'on')
 
     @property
@@ -461,10 +542,19 @@ class Config:
     def book_use_llm_titles(self) -> bool:
         """Check if book exports should use LLM for title generation.
 
+        When True (default), uses OpenRouter API to generate descriptive titles.
+        Requires OPENROUTER_API_KEY to be set. Falls back to first user question
+        if API key is missing or LLM call fails.
+
+        ARCHITECTURAL DECISION: Default is true. LLM-powered naming is the
+        intended experience. Users who cannot or choose not to use LLM
+        must explicitly set BOOK_USE_LLM_TITLES=false. The fallback path
+        (first user question) exists as a safety net, not the primary mode.
+
         Returns:
             True if LLM should be used for titles.
         """
-        value = os.getenv('BOOK_USE_LLM_TITLES', 'false').lower()
+        value = os.getenv('BOOK_USE_LLM_TITLES', 'true').lower()
         return value in ('true', '1', 'yes', 'on')
 
     @property

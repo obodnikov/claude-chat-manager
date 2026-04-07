@@ -805,8 +805,7 @@ def export_project_chats(
         # Initialize LLM client for title generation if needed
         llm_client = None
         if format_type == 'book' and config.book_generate_titles and config.book_use_llm_titles:
-            # Use provided API key or fall back to config
-            effective_api_key = api_key or config.openrouter_api_key
+            effective_api_key = config.get_effective_api_key(api_key)
             if effective_api_key:
                 try:
                     from .llm_client import OpenRouterClient
@@ -816,7 +815,10 @@ def export_project_chats(
                     logger.warning(f"Failed to initialize LLM client: {e}")
                     logger.info("Falling back to first user question for titles")
             else:
-                logger.info("No API key available, using first user question for titles")
+                logger.warning(
+                    "BOOK_USE_LLM_TITLES is enabled but OPENROUTER_API_KEY is not set. "
+                    "Falling back to first user question for titles."
+                )
 
         # Build execution log index for Kiro files (for faster lookups)
         execution_log_index = None
@@ -1238,10 +1240,10 @@ def export_single_chat(
 
         # Generate filename
         if format_type == 'book' and config.book_generate_titles:
-            # Initialize LLM client if needed
+            # Initialize LLM client if needed (requires both generate_titles and use_llm_titles)
             llm_client = None
-            if config.book_use_llm_titles:
-                effective_api_key = api_key or config.openrouter_api_key
+            if config.book_generate_titles and config.book_use_llm_titles:
+                effective_api_key = config.get_effective_api_key(api_key)
                 if effective_api_key:
                     try:
                         from .llm_client import OpenRouterClient
@@ -1249,6 +1251,11 @@ def export_single_chat(
                         logger.debug("Using LLM for single chat title generation")
                     except Exception as e:
                         logger.warning(f"Failed to initialize LLM client: {e}")
+                else:
+                    logger.warning(
+                        "BOOK_USE_LLM_TITLES is enabled but OPENROUTER_API_KEY is not set. "
+                        "Falling back to first user question for title."
+                    )
 
             # Initialize chat filter for text extraction
             chat_filter = ChatFilter(

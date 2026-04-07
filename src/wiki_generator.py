@@ -333,7 +333,8 @@ class WikiGenerator:
     ) -> str:
         """Generate title without LLM (fallback).
 
-        Uses first user question as title.
+        Uses first meaningful user question as title, stripping steering
+        and system tags for cleaner output.
 
         Args:
             chat_data: Parsed chat data.
@@ -348,22 +349,29 @@ class WikiGenerator:
             role = message.get('role', '')
             content = message.get('content', '')
 
-            if role == 'user':
+            if role in ('user', 'human'):
                 # Extract text from content
                 text = self._extract_text_only(content)
-                if text:
-                    # Apply sanitization to title if enabled
-                    # Note: This is separate from content sanitization to ensure
-                    # titles (which appear in TOC) don't leak sensitive data
-                    if self.sanitizer:
-                        text, _ = self.sanitizer.sanitize_text(text, track_changes=False)
+                if not text:
+                    continue
 
-                    # Use first line or first 60 chars
-                    first_line = text.split('\n')[0]
-                    title = first_line[:60].strip()
-                    if len(first_line) > 60:
-                        title += "..."
-                    return title
+                # Apply sanitization to title if enabled
+                if self.sanitizer:
+                    text, _ = self.sanitizer.sanitize_text(text, track_changes=False)
+
+                # Use ChatFilter to strip steering/system tags for cleaner titles
+                cleaned = self.chat_filter.clean_user_message(text)
+                if not cleaned:
+                    continue
+
+                # Find first meaningful line (skip steering summary markers)
+                for line in cleaned.split('\n'):
+                    line = line.strip()
+                    if line and not line.startswith('*[Steering files included:'):
+                        title = line[:60].strip()
+                        if len(line) > 60:
+                            title += "..."
+                        return title
 
         # Last resort: use filename or generic title
         if chat_file:

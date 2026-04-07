@@ -354,13 +354,15 @@ Environment Variables:
                     logger.info(f"Generating wiki for project: {args.project} (mode: {mode})")
 
                     # Get API settings from config
-                    use_llm = config.wiki_generate_titles
+                    # LLM is used only when both title generation and LLM are enabled
+                    use_llm = config.wiki_generate_titles and config.wiki_use_llm_titles
                     api_key = config.openrouter_api_key
 
-                    if use_llm and not api_key:
-                        print_colored("⚠️  Warning: OPENROUTER_API_KEY not set. Using fallback titles.", Colors.YELLOW)
-                        print("   Set your API key in .env file to enable AI-generated titles.")
-                        print("   Get your key at: https://openrouter.ai/keys\n")
+                    if use_llm and not config.has_valid_api_key:
+                        print_colored("⚠️  OPENROUTER_API_KEY not set. Using first user question as titles.", Colors.YELLOW)
+                        print("   Set OPENROUTER_API_KEY in .env to enable AI-generated titles.")
+                        print("   Get your key at: https://openrouter.ai/keys")
+                        print("   Or set WIKI_USE_LLM_TITLES=false to suppress this warning.\n")
                         use_llm = False
 
                     # Export wiki (pass mode for update/rebuild logic)
