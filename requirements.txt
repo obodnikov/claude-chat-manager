@@ -1,6 +1,6 @@
 # Claude Chat Manager - Runtime Dependencies
 
-# Note: This project uses only Python standard library for runtime
-# No external dependencies required for core functionality!
+# SSL certificate handling (required for macOS and some Linux distros)
+certifi>=2023.7.22
 
 # For development/testing, see requirements-dev.txt

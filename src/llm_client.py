@@ -6,6 +6,8 @@ chat titles and other LLM-powered functionality.
 
 import json
 import logging
+import os
+import ssl
 from typing import Optional
 from urllib import request, error
 from urllib.parse import urljoin
@@ -47,8 +49,59 @@ class OpenRouterClient:
         self.model = model
         self.base_url = base_url
         self.timeout = timeout
+        self._ssl_context = self._create_ssl_context()
 
         logger.debug(f"Initialized OpenRouter client with model: {model}")
+
+    @staticmethod
+    def _create_ssl_context() -> ssl.SSLContext:
+        """Create SSL context with fallback strategy.
+
+        Priority: SSL_CERT_FILE env var → system trust store → certifi bundle.
+
+        Returns:
+            Configured SSL context.
+        """
+        # 1. Explicit CA bundle via env var
+        ca_file = os.environ.get("SSL_CERT_FILE")
+        if ca_file and os.path.isfile(ca_file):
+            try:
+                ctx = ssl.create_default_context(cafile=ca_file)
+                logger.debug(f"Using SSL_CERT_FILE: {ca_file}")
+                return ctx
+            except (ssl.SSLError, OSError, ValueError) as e:
+                logger.warning(f"SSL_CERT_FILE '{ca_file}' is invalid, trying fallbacks: {e}")
+
+        # 2. System trust store
+        try:
+            ctx = ssl.create_default_context()
+            logger.debug("Using system SSL trust store")
+            return ctx
+        except (ssl.SSLError, OSError) as e:
+            logger.debug(f"System trust store unavailable, falling back to certifi: {e}")
+
+        # 3. Fallback to certifi
+        return OpenRouterClient._certifi_ssl_context()
+
+    @staticmethod
+    def _certifi_ssl_context() -> ssl.SSLContext:
+        """Create SSL context using certifi's CA bundle.
+
+        Returns:
+            SSL context with certifi CAs, or raises if certifi is unavailable.
+
+        Raises:
+            OpenRouterError: If certifi is not installed and is needed.
+        """
+        try:
+            import certifi
+            logger.debug("Falling back to certifi CA bundle")
+            return ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            raise OpenRouterError(
+                "SSL certificate verification failed and 'certifi' package is not installed. "
+                "Install it with: pip install certifi"
+            )
 
     def generate_chat_title(
         self,
@@ -144,14 +197,36 @@ Example format: "Implementing Custom Exception Handling in Python"
 
             logger.debug(f"Calling OpenRouter API: {self.model}")
 
-            with request.urlopen(req, timeout=self.timeout) as response:
-                response_body = response.read().decode('utf-8')
-                logger.debug(f"Raw API response (first 200 chars): {response_body[:200]}")
+            try:
+                with request.urlopen(req, timeout=self.timeout, context=self._ssl_context) as response:
+                    response_body = response.read().decode('utf-8')
+            except error.URLError as ssl_err:
+                reason = ssl_err.reason
+                is_cert_error = (
+                    isinstance(reason, ssl.SSLCertVerificationError)
+                    or (isinstance(reason, ssl.SSLError) and "CERTIFICATE_VERIFY_FAILED" in str(reason))
+                )
+                if is_cert_error:
+                    logger.warning("SSL verification failed with current context, retrying with certifi")
+                    certifi_ctx = self._certifi_ssl_context()
+                    self._ssl_context = certifi_ctx
+                    req = request.Request(
+                        url,
+                        data=json.dumps(payload).encode('utf-8'),
+                        headers=headers,
+                        method='POST'
+                    )
+                    with request.urlopen(req, timeout=self.timeout, context=certifi_ctx) as response:
+                        response_body = response.read().decode('utf-8')
+                else:
+                    raise
 
-                if not response_body:
-                    raise OpenRouterError("Empty response from API")
+            logger.debug(f"Raw API response (first 200 chars): {response_body[:200]}")
 
-                response_data = json.loads(response_body)
+            if not response_body:
+                raise OpenRouterError("Empty response from API")
+
+            response_data = json.loads(response_body)
 
             # Extract response text
             if 'choices' in response_data and len(response_data['choices']) > 0:
