@@ -93,7 +93,7 @@ def strip_kiro_system_prompt(text: str) -> str:
     accidental removal of legitimate user content.
 
     Strips:
-    - All known Kiro system prompt XML blocks
+    - Leading Kiro system prompt XML blocks (preserves user content after them)
     - The assistant acknowledgment "I will follow these instructions."
     - Excessive whitespace left behind
 
@@ -109,21 +109,55 @@ def strip_kiro_system_prompt(text: str) -> str:
 
     logger.debug("Kiro system prompt signature detected, stripping system blocks")
 
-    cleaned = text
-    for tag in KIRO_SYSTEM_TAGS:
-        cleaned = re.sub(
-            rf'<{tag}>.*?</{tag}>',
-            '', cleaned, flags=re.DOTALL
-        )
-
-    # Strip the "I will follow these instructions." acknowledgment
-    cleaned = re.sub(
-        r'^\s*I will follow these instructions\.?\s*$',
-        '', cleaned, flags=re.MULTILINE
+    # Build a combined pattern that matches any single system tag block
+    # Uses a backreference to ensure opening and closing tags match
+    tag_alts = '|'.join(re.escape(tag) for tag in KIRO_SYSTEM_TAGS)
+    system_block_re = re.compile(
+        rf'<\s*(?P<tag>{tag_alts})\s*>.*?</\s*(?P=tag)\s*>',
+        flags=re.DOTALL
     )
+    # Ack line: standalone line, must be followed by newline or end-of-string
+    ack_re = re.compile(r'I will follow these instructions\.?[ \t]*(?:\n|$)')
+    # Whitespace (including newlines) between blocks
+    ws_re = re.compile(r'\s+')
 
-    # Clean up excessive whitespace
-    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
-    cleaned = cleaned.strip()
+    # Walk forward from the start, consuming contiguous system blocks,
+    # inter-block whitespace, and the ack line. Stop at first non-system
+    # content. The ack line is only consumed if at least one system block
+    # was already consumed (to avoid stripping user content that happens
+    # to start with that phrase).
+    pos = 0
+    consumed_system_block = False
+    length = len(text)
 
-    return cleaned
+    while pos < length:
+        # Skip whitespace between blocks
+        ws_match = ws_re.match(text, pos)
+        if ws_match:
+            pos = ws_match.end()
+            if pos >= length:
+                break
+
+        # Try to match a system tag block at current position
+        block_match = system_block_re.match(text, pos)
+        if block_match:
+            pos = block_match.end()
+            consumed_system_block = True
+            continue
+
+        # Try to match the acknowledgment line, but only after
+        # at least one real system block was consumed
+        if consumed_system_block:
+            ack_match = ack_re.match(text, pos)
+            if ack_match:
+                pos = ack_match.end()
+                continue
+
+        # Not a system block or ack — this is user content, stop
+        break
+
+    user_suffix = text[pos:]
+    user_suffix = re.sub(r'\n{3,}', '\n\n', user_suffix)
+    user_suffix = user_suffix.strip()
+
+    return user_suffix

@@ -770,17 +770,29 @@ def extract_messages_from_execution_log(
                     # Skip environment context blocks
                     if '<EnvironmentContext>' in text:
                         continue
+                    # Strip Kiro system prompt if signature detected
+                    # Must run BEFORE identity check so user content after
+                    # injected prompt is preserved
+                    if has_kiro_system_prompt(text):
+                        cleaned = strip_kiro_system_prompt(text)
+                        if not cleaned:
+                            # Pure system content — mark and skip
+                            is_system_message = True
+                            break
+                        # After stripping, re-check for system markers
+                        if cleaned.strip().startswith('<identity>'):
+                            is_system_message = True
+                            break
+                        if cleaned.strip().startswith('[SYSTEM NOTE:'):
+                            is_system_message = True
+                            break
+                        text_parts.append(cleaned)
+                        continue
                     # Check for system/identity messages that should be skipped entirely
+                    # Only applies to messages that are purely system content
                     if text.strip().startswith('<identity>'):
                         is_system_message = True
                         break
-                    # Strip Kiro system prompt if signature detected
-                    # Uses shared utility with multi-tag signature detection
-                    if has_kiro_system_prompt(text):
-                        cleaned = strip_kiro_system_prompt(text)
-                        if cleaned:
-                            text_parts.append(cleaned)
-                        continue
                     # Skip system summarization requests
                     if '[SYSTEM NOTE:' in text:
                         is_system_message = True
