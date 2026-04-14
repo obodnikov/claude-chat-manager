@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .exceptions import ChatFileNotFoundError, InvalidChatFileError
 from .models import ChatMessage, ChatSource
+from .kiro_system_prompt import has_kiro_system_prompt, strip_kiro_system_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -773,6 +774,13 @@ def extract_messages_from_execution_log(
                     if text.strip().startswith('<identity>'):
                         is_system_message = True
                         break
+                    # Strip Kiro system prompt if signature detected
+                    # Uses shared utility with multi-tag signature detection
+                    if has_kiro_system_prompt(text):
+                        cleaned = strip_kiro_system_prompt(text)
+                        if cleaned:
+                            text_parts.append(cleaned)
+                        continue
                     # Skip system summarization requests
                     if '[SYSTEM NOTE:' in text:
                         is_system_message = True

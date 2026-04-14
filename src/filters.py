@@ -156,6 +156,9 @@ class ChatFilter:
         # Handle <EnvironmentContext> blocks from Kiro exports
         cleaned = self._strip_environment_context(cleaned)
 
+        # Handle Kiro system prompt XML blocks (key_kiro_features, etc.)
+        cleaned = self._strip_kiro_system_prompt(cleaned)
+
         # Known system tag patterns to remove completely
         system_patterns = [
             r'<ide_opened_file>.*?</ide_opened_file>',
@@ -300,6 +303,26 @@ class ChatFilter:
             '', text, flags=re.DOTALL
         )
         return cleaned
+
+    def _strip_kiro_system_prompt(self, text: str) -> str:
+        """Strip Kiro system prompt XML blocks from user messages.
+
+        Delegates to the shared utility in kiro_system_prompt module.
+        Only strips when a strong Kiro signature is detected (multiple
+        known tags present), preventing false positives on legitimate
+        user content.
+
+        Args:
+            text: Text that may contain Kiro system prompt blocks.
+
+        Returns:
+            Text with system prompt blocks removed.
+        """
+        if self.keep_steering:
+            return text
+
+        from .kiro_system_prompt import strip_kiro_system_prompt
+        return strip_kiro_system_prompt(text)
 
     def clean_user_message(self, text: str) -> Optional[str]:
         """Clean user message by removing system notifications.
