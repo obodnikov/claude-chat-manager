@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from src.colors import Colors, print_colored
 from src.exceptions import ClaudeReaderError, ConfigurationError, ProjectNotFoundError
 from src.models import ChatSource, ProjectInfo
+from src.auto_exporter import AutoExporter, print_results
 from src.project_matcher import (
     MappingConfig,
     ProjectMapping,
@@ -591,6 +592,87 @@ def _parse_source(value: str) -> Optional[ChatSource]:
     return source_map[value.lower()]
 
 
+def _run_pipeline(
+    root_dir: Path,
+    config_path: Path,
+    source_filter: Optional[ChatSource] = None,
+    export_format: str = 'book',
+    dry_run: bool = False,
+    keep_tmp: bool = False,
+) -> int:
+    """Run the auto-export pipeline (execute or dry-run).
+
+    Loads the mapping config, initializes AutoExporter, and runs
+    either the full pipeline or dry-run report.
+
+    Args:
+        root_dir: Root directory containing project folders.
+        config_path: Path to mapping config JSON file.
+        source_filter: Optional filter to process only one source.
+        export_format: Export format ('book' or 'markdown').
+        dry_run: If True, only preview — don't export or merge.
+        keep_tmp: If True, don't clean up temporary directory.
+
+    Returns:
+        Exit code (0 for success, 1 for error).
+    """
+    # Load config
+    if not config_path.exists():
+        print_colored(
+            "❌ No mapping config found. Run --learn first to build one.",
+            Colors.RED
+        )
+        print_colored(
+            f"   Expected: {config_path}",
+            Colors.YELLOW
+        )
+        return 1
+
+    mapping_config = MappingConfig(config_path)
+    try:
+        mapping_config.load()
+    except ConfigurationError as e:
+        print_colored(f"❌ Failed to load config: {e}", Colors.RED)
+        return 1
+
+    # Initialize exporter
+    try:
+        exporter = AutoExporter(
+            root_dir=root_dir,
+            mapping_config=mapping_config,
+            source_filter=source_filter,
+            export_format=export_format,
+            dry_run=dry_run,
+            keep_tmp=keep_tmp,
+        )
+    except ConfigurationError as e:
+        print_colored(f"❌ {e}", Colors.RED)
+        return 1
+
+    # Run
+    try:
+        if dry_run:
+            print_colored("🔍 Dry run — no files will be modified\n", Colors.CYAN)
+            exporter.dry_run_report()
+        else:
+            print_colored("🚀 Running auto-export pipeline...\n", Colors.CYAN)
+            results = exporter.run()
+            print_results(results)
+
+            # Return error code if any errors occurred
+            if any(r.errors for r in results):
+                return 1
+    except ClaudeReaderError as e:
+        print_colored(f"\n❌ Pipeline failed: {e}", Colors.RED)
+        return 1
+    except Exception as e:
+        logger.error(f"Unexpected pipeline error: {e}")
+        print_colored(f"\n❌ Unexpected error: {e}", Colors.RED)
+        return 1
+
+    return 0
+
+
 def main() -> int:
     """CLI entry point.
 
@@ -612,10 +694,10 @@ Examples:
   # Update mappings (keep confirmed, add new projects)
   %(prog)s --root ~/src --learn --update
 
-  # Preview what would happen (Phase 3)
+  # Preview what would happen
   %(prog)s --root ~/src --dry-run
 
-  # Run the full export+merge pipeline (Phase 3)
+  # Run the full export+merge pipeline
   %(prog)s --root ~/src
         """
     )
@@ -642,7 +724,7 @@ Examples:
     parser.add_argument(
         '--dry-run',
         action='store_true',
-        help='Preview mode: show plan without executing (Phase 3)'
+        help='Preview mode: show plan without executing'
     )
 
     parser.add_argument(
@@ -663,14 +745,14 @@ Examples:
     parser.add_argument(
         '--keep-tmp',
         action='store_true',
-        help="Don't clean up temporary export directory (Phase 3)"
+        help="Don't clean up temporary export directory"
     )
 
     parser.add_argument(
         '--format',
         choices=['book', 'markdown'],
         default='book',
-        help='Export format: book or markdown (default: book) (Phase 3)'
+        help='Export format: book or markdown (default: book)'
     )
 
     parser.add_argument(
@@ -727,31 +809,25 @@ Examples:
             )
 
         elif args.dry_run:
-            print_colored(
-                "⚠️  Dry-run mode not yet implemented (Phase 3).",
-                Colors.YELLOW
+            return _run_pipeline(
+                root_dir=root_dir,
+                config_path=config_path,
+                source_filter=args.source,
+                export_format=args.format,
+                dry_run=True,
+                keep_tmp=args.keep_tmp,
             )
-            return 1
 
         else:
-            # Execute mode (Phase 3)
-            # Check config exists
-            if not config_path.exists():
-                print_colored(
-                    "❌ No mapping config found. Run --learn first to build one.",
-                    Colors.RED
-                )
-                print_colored(
-                    f"   Expected: {config_path}",
-                    Colors.YELLOW
-                )
-                return 1
-
-            print_colored(
-                "⚠️  Execute mode not yet implemented (Phase 3).",
-                Colors.YELLOW
+            # Execute mode
+            return _run_pipeline(
+                root_dir=root_dir,
+                config_path=config_path,
+                source_filter=args.source,
+                export_format=args.format,
+                dry_run=False,
+                keep_tmp=args.keep_tmp,
             )
-            return 1
 
     except KeyboardInterrupt:
         print_colored("\n\n❌ Cancelled by user.", Colors.RED)
