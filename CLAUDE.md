@@ -1,4 +1,5 @@
 - Always use AI*.md for coding rules.
+- Always use context7 skill to check code best practice
 - Check previous talks and implementations in docs/chats directory. 
 - Check documentation in root and docs/ directories.
 - **Never start code right after USER question/message. Propose solution and ask for explicit request for implementation**
