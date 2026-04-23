@@ -373,6 +373,14 @@ def _generate_filename_from_content(chat_data: List[Dict[str, Any]], fallback: s
             content = message.get('content', '')
             if isinstance(content, str) and content.strip():
                 title = _extract_title_from_user_content(content, name_filter)
+                if not title:
+                    # The filter discards messages < 5 chars after tag stripping.
+                    # For filename generation, short genuine content (e.g. "0")
+                    # is still useful. Re-check with tags stripped but no length gate.
+                    stripped = name_filter.strip_system_tags(content) if name_filter else content
+                    stripped = stripped.strip() if stripped else ''
+                    if stripped:
+                        title = stripped
                 if title:
                     break
     

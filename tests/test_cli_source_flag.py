@@ -450,6 +450,7 @@ class TestFindProjectByName:
             mock_workspace.session_count = 5
             mock_workspace.last_modified = '2025-01-15 10:00'
             mock_workspace.sessions = [Mock(session_id='session1')]
+            mock_workspace.session_dir = Path('/mock/kiro/workspace-sessions/encoded')
             
             with patch('src.kiro_projects.discover_kiro_workspaces', return_value=[mock_workspace]):
                 from src.projects import find_project_by_name
@@ -457,7 +458,9 @@ class TestFindProjectByName:
                 
                 assert result is not None
                 assert result.source == ChatSource.KIRO_IDE
-                assert result.path == Path('/path/to/workspace')
+                # path points to session_dir (where chat files live)
+                assert result.path == mock_workspace.session_dir
+                assert result.workspace_path == '/path/to/workspace'
 
     def test_find_project_not_found(self):
         """Test behavior when project is not found.
@@ -531,6 +534,7 @@ class TestFindProjectByName:
                 mock_workspace.session_count = 5
                 mock_workspace.last_modified = '2025-01-15 10:00'
                 mock_workspace.sessions = [Mock(session_id='session1')]
+                mock_workspace.session_dir = Path('/mock/kiro/workspace-sessions/encoded')
                 
                 with patch('src.kiro_projects.discover_kiro_workspaces', return_value=[mock_workspace]):
                     from src.projects import find_project_by_name
@@ -540,7 +544,9 @@ class TestFindProjectByName:
                     # Should find Kiro project
                     assert result is not None
                     assert result.source == ChatSource.KIRO_IDE
-                    assert result.path == Path('/path/to/kiro/project')
+                    # path points to session_dir (where chat files live)
+                    assert result.path == mock_workspace.session_dir
+                    assert result.workspace_path == '/path/to/kiro/project'
 
 
 if __name__ == '__main__':
