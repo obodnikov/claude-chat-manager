@@ -755,17 +755,37 @@ Examples:
         help='Export format: book or markdown (default: book)'
     )
 
-    parser.add_argument(
+    log_group = parser.add_mutually_exclusive_group()
+    log_group.add_argument(
         '-v', '--verbose',
         action='store_true',
-        help='Enable debug logging'
+        help='Enable debug logging (shortcut for --log-level DEBUG)'
+    )
+    log_group.add_argument(
+        '-q', '--quiet',
+        action='store_true',
+        help='Suppress INFO/WARNING logs (shortcut for --log-level ERROR)'
+    )
+    log_group.add_argument(
+        '--log-level',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'QUIET'],
+        default=None,
+        help='Set logging level (default: INFO). QUIET is an alias for ERROR.'
     )
 
     args = parser.parse_args()
 
-    # Set logging level
+    # Set logging level (verbose/quiet/log-level are mutually exclusive).
     if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+        resolved_level = logging.DEBUG
+    elif args.quiet:
+        resolved_level = logging.ERROR
+    elif args.log_level:
+        resolved_level = logging.ERROR if args.log_level == 'QUIET' \
+            else getattr(logging, args.log_level)
+    else:
+        resolved_level = logging.INFO
+    logging.getLogger().setLevel(resolved_level)
 
     # Resolve root directory (expand ~ and make absolute)
     root_dir = args.root.expanduser().resolve()
