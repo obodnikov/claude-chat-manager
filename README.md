@@ -13,6 +13,7 @@ A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat f
 - 📚 **Wiki Generation** - Generate AI-powered single-page wikis from entire projects
 - 🔒 **Data Sanitization** - NEW! Automatically detect and redact API keys, tokens, and passwords
 - 🧹 **Steering Content Filtering** - Automatically strips Kiro steering/included rules from exports
+- 🚀 **Auto-Export Pipeline** - NEW! One-command export+merge across all sources into project `docs/chats/` folders
 - 🤖 **AI-Powered Titles** - Automatic chat title generation using LLM (via OpenRouter)
 - 🎯 **Batch Export** - Export entire projects to organized Markdown files
 - 🎨 **Colored Output** - Beautiful terminal interface with syntax highlighting
@@ -509,6 +510,74 @@ python3 merge-chats.py --source NEW_EXPORTS/ --target docs/chats/ --auto --backu
 ```
 
 📚 **Full Documentation:** See [docs/MERGE_CHATS.md](docs/MERGE_CHATS.md) for complete guide, examples, and workflows.
+
+## 🚀 Auto-Export Utility (NEW!)
+
+Automate the full chat export pipeline — discover conversations across all sources, match them to project folders on disk, export, and merge into each project's `docs/chats/` directory with a single command.
+
+### The Problem
+
+Exporting chats for every project × every source is a tedious multi-step loop:
+
+1. Run `claude-chat-manager.py "project" -f book -o tmp/` for each project
+2. Run `merge-chats.py --source tmp/ --target ~/src/project/docs/chats/ --auto` for each project
+3. Repeat for every project across Claude Desktop, Kiro IDE, and Codex CLI
+
+### The Solution
+
+```bash
+# First time: build the mapping config interactively
+python3 auto-export.py --root ~/src --learn
+
+# Preview what would happen (safe, no writes)
+python3 auto-export.py --root ~/src --dry-run
+
+# Execute the full pipeline
+python3 auto-export.py --root ~/src
+```
+
+### How It Works
+
+1. **Discovers** every conversation project across Claude, Kiro, and Codex
+2. **Matches** each one to a filesystem folder under `--root` using workspace paths, Claude name decoding, basename match, or fuzzy matching
+3. **Groups** multiple sources that resolve to the same folder (e.g. Claude + Kiro + Codex → `~/src/my-app/docs/chats/`)
+4. **Exports** to a temp directory, then **merges** into each target using `ChatMerger` (no duplicates, no overwrites of more-complete versions)
+
+### Learn Mode
+
+On the first run, `--learn` walks through every conversation project and asks you to confirm the auto-matched target folder:
+
+```
+[1/8] Users-Mike-Src-Claude-Chat-Manager [Claude]
+  Auto-matched: ~/src/claude-chat-manager/docs/chats/ (claude_path_decode)
+  Docs target:  ~/src/claude-chat-manager/docs/chats/ (found, 16 files)
+  → Confirm? [Y/n/custom/skip]: y
+  ✅ Confirmed
+```
+
+Mappings are saved to `~/.config/claude-chat-manager/project-mapping.json` for subsequent runs.
+
+### Key Flags
+
+| Flag | Description |
+|------|-------------|
+| `--root`, `-r` | Root directory containing project folders (required) |
+| `--learn` | Interactive mode: build/update mapping config |
+| `--update` | With `--learn`: keep existing confirmed mappings |
+| `--dry-run` | Preview without writing |
+| `--source` | Filter: `claude`, `kiro`, `codex`, or `all` |
+| `--config` | Custom config path (also via `AUTO_EXPORT_CONFIG` env var) |
+| `--format` | `book` (default) or `markdown` |
+
+### Regular Usage
+
+After setup, one command updates every project:
+
+```bash
+python3 auto-export.py --root ~/src
+```
+
+📚 **Full Documentation:** See [docs/AUTO_EXPORT.md](docs/AUTO_EXPORT.md) for complete guide, config schema, matching strategy, and troubleshooting.
 
 ## 🎮 Navigation Controls
 
