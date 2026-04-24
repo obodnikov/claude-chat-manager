@@ -25,7 +25,7 @@ from .exceptions import ConfigurationError, ExportError
 from .exporters import export_project_chats
 from .models import ChatSource, ProjectInfo
 from .project_matcher import MappingConfig, ProjectMapping
-from .projects import get_project_chat_files, list_all_projects
+from .projects import list_all_projects
 
 logger = logging.getLogger(__name__)
 
@@ -172,19 +172,18 @@ class AutoExporter:
     def dry_run_report(self) -> List[ExportResult]:
         """Show what would happen without executing.
 
-        Discovers projects, resolves mappings, and for each target
-        counts source chats and analyzes existing target files.
+        Discovers projects, resolves mappings, exports each source
+        project to an isolated temporary directory, and runs the real
+        ChatMerger analysis to produce accurate new/update/skip/review
+        counts. The target directory is never created or written to.
 
         Returns:
-            List of ExportResult objects with estimated counts.
+            List of ExportResult objects with accurate counts.
 
         Raises:
             ExportError: If project discovery fails entirely.
         """
-        # Discover conversation projects
         all_projects = list_all_projects(self.source_filter)
-
-        # Group by target
         grouped = self._group_projects_by_target(all_projects)
 
         if not grouped:
@@ -192,64 +191,143 @@ class AutoExporter:
             return []
 
         results: List[ExportResult] = []
+        tmp_base = Path(tempfile.mkdtemp(prefix='auto-export-dryrun-'))
+        logger.info(f"Dry-run tmp directory: {tmp_base}")
 
         print_colored("\n📋 Dry Run — Export Plan", Colors.CYAN)
         print(f"{'═' * 60}")
 
-        for target_key, (target_dir, projects) in grouped.items():
-            # Derive display-friendly name
-            try:
-                display_name = str(
-                    target_dir.resolve().relative_to(self.root_dir)
+        try:
+            for _, (target_dir, projects) in grouped.items():
+                result = self._analyze_target_dry_run(
+                    target_dir, projects, tmp_base
                 )
-            except ValueError:
-                display_name = target_key
+                existing = 0
+                if target_dir.exists() and target_dir.is_dir():
+                    existing = len(list(target_dir.glob('*.md')))
 
-            result = ExportResult(
-                target_name=display_name,
-                target_dir=target_dir,
-            )
+                print(f"\n  📁 {result.target_name}")
+                for name, source in result.sources:
+                    label = SOURCE_LABELS.get(source, source.value)
+                    print(f"     [{label}] {name}")
+                print(f"     Source chats:              {result.chats_exported}")
+                print(f"     Existing files in target:  {existing}")
+                print( "     Merge preview:")
+                self._print_merge_counts(result, indent="       ")
+                print(f"     Target: {target_dir}")
+                for err in result.errors:
+                    print_colored(f"     ⚠️  {err}", Colors.RED)
 
-            # Count source chats
-            total_chats = 0
-            for project_info in projects:
-                source_label = SOURCE_LABELS.get(
-                    project_info.source, project_info.source.value
+                results.append(result)
+        finally:
+            if not self.keep_tmp:
+                try:
+                    shutil.rmtree(tmp_base)
+                except OSError as e:
+                    logger.warning(f"Failed to clean up {tmp_base}: {e}")
+            else:
+                print_colored(
+                    f"\nℹ️  Dry-run tmp kept at: {tmp_base}", Colors.CYAN
                 )
-                result.sources.append(
-                    (project_info.name, project_info.source)
-                )
 
-                chat_count = self._count_project_chats(project_info)
-                total_chats += chat_count
-
-            result.chats_exported = total_chats
-
-            # Count existing files in target
-            existing_count = 0
-            if target_dir.exists() and target_dir.is_dir():
-                existing_count = len(list(target_dir.glob('*.md')))
-
-            # Display
-            print(f"\n  📁 {display_name}")
-            for name, source in result.sources:
-                label = SOURCE_LABELS.get(source, source.value)
-                print(f"     [{label}] {name}")
-            print(f"     Source chats: {total_chats}")
-            print(f"     Existing files in target: {existing_count}")
-            print(f"     Target: {target_dir}")
-
-            results.append(result)
+        # Grand totals.
+        totals = ExportResult(target_name="", target_dir=Path())
+        for r in results:
+            totals.chats_exported += r.chats_exported
+            totals.new_files += r.new_files
+            totals.updated_files += r.updated_files
+            totals.skipped_files += r.skipped_files
+            totals.review_files += r.review_files
+            totals.errors.extend(r.errors)
+        total_sources = sum(len(r.sources) for r in results)
 
         print(f"\n{'═' * 60}")
-        total_sources = sum(len(r.sources) for r in results)
-        total_chats = sum(r.chats_exported for r in results)
-        print(f"  Targets: {len(results)}")
-        print(f"  Source projects: {total_sources}")
-        print(f"  Total chats to export: {total_chats}")
+        print(f"  Targets:                  {len(results)}")
+        print(f"  Source projects:          {total_sources}")
+        print(f"  Total chats to export:    {totals.chats_exported}")
+        self._print_merge_counts(totals, indent="  ")
+        if totals.errors:
+            print_colored(
+                f"  ⚠️  Errors:               {len(totals.errors)}",
+                Colors.RED,
+            )
         print(f"{'═' * 60}")
 
         return results
+
+    def _analyze_target_dry_run(
+        self,
+        target_dir: Path,
+        projects: List[ProjectInfo],
+        tmp_base: Path,
+    ) -> ExportResult:
+        """Export to tmp and analyze merge for one target (dry-run).
+
+        Never writes to the target directory. Populates an ExportResult
+        with accurate new/update/skip/review counts from ChatMerger.
+        """
+        try:
+            display_name = str(target_dir.resolve().relative_to(self.root_dir))
+        except ValueError:
+            display_name = str(target_dir)
+
+        result = ExportResult(target_name=display_name, target_dir=target_dir)
+        for project_info in projects:
+            result.sources.append((project_info.name, project_info.source))
+
+        tmp_dir = tmp_base / _safe_dirname(display_name)
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+
+        # Real export to tmp — never touches target.
+        result.chats_exported = self._collect_source_exports(
+            projects, tmp_dir, result
+        )
+        if result.chats_exported == 0:
+            return result
+
+        # Target missing → every exported file will be new.
+        if not target_dir.exists() or not target_dir.is_dir():
+            result.new_files = len(list(tmp_dir.glob('*.md')))
+            return result
+
+        try:
+            decisions = self._merger.analyze_directories(tmp_dir, target_dir)
+        except Exception as e:
+            error_msg = f"Dry-run merge analysis failed for {target_dir}: {e}"
+            logger.error(error_msg)
+            result.errors.append(error_msg)
+            return result
+
+        for decision in decisions:
+            if decision.action == MergeAction.NEW:
+                result.new_files += 1
+            elif decision.action == MergeAction.UPDATE:
+                result.updated_files += 1
+            elif decision.action == MergeAction.SKIP:
+                result.skipped_files += 1
+            elif decision.action == MergeAction.REVIEW:
+                result.review_files += 1
+
+        return result
+
+    @staticmethod
+    def _print_merge_counts(result: ExportResult, indent: str = "") -> None:
+        """Print the new/update/skip/review block for a result."""
+        print_colored(
+            f"{indent}🆕 New (will be added):    {result.new_files}",
+            Colors.GREEN,
+        )
+        if result.updated_files > 0:
+            print_colored(
+                f"{indent}🔄 Update (will replace): {result.updated_files}",
+                Colors.BLUE,
+            )
+        print(f"{indent}⏭️  Skip (already synced): {result.skipped_files}")
+        if result.review_files > 0:
+            print_colored(
+                f"{indent}⚠️  Review (manual):       {result.review_files}",
+                Colors.YELLOW,
+            )
 
     def _group_projects_by_target(
         self,
@@ -365,53 +443,14 @@ class AutoExporter:
             print(f"   {part}")
 
         # Export each source project to an isolated subdirectory
-        # to prevent within-batch filename overwrites, then consolidate
-        # into the shared tmp dir. Filenames are content-derived by
-        # export_project_chats() (LLM or first-message based), so we
-        # preserve them as-is. Only add a numeric suffix on actual
-        # same-name collisions between sources.
-        # --- FILENAME NAMING CONVENTION (by design) ---
-        # Filenames are generated by export_project_chats() using the
-        # existing content-derived naming: LLM-generated titles or
-        # first user message, same as claude-chat-manager.py single
-        # exports. This is intentional — filenames reflect conversation
-        # content, NOT source identity. Do NOT add source/project
-        # prefixes to filenames; the ChatMerger handles deduplication
-        # via content fingerprinting (first N message pairs), not by
-        # filename matching. See: src/exporters.py → _generate_book_filename()
-        #
-        # Isolated subdirectories prevent within-batch overwrites when
-        # two sources happen to produce the same content-derived name.
-        # Numeric suffixes (-2, -3) are only added on actual collision.
-        # ---
-        total_exported = 0
-        source_subdirs: List[Tuple[Path, ProjectInfo]] = []
-
-        for project_info in projects:
-            source_subdir = tmp_dir / _safe_dirname(
-                f"{project_info.source.value}_{project_info.name}"
-            )
-            source_subdir.mkdir(parents=True, exist_ok=True)
-            exported = self._export_project(
-                project_info, source_subdir, result
-            )
-            total_exported += exported
-            source_subdirs.append((source_subdir, project_info))
-
-        # Consolidate: move files from isolated subdirs to shared tmp.
-        # Preserve original content-derived filenames as-is.
-        # On same-name collision between sources, add numeric suffix.
-        # This is safe because ChatMerger matches by content, not name.
-        for source_subdir, project_info in source_subdirs:
-            for exported_file in source_subdir.rglob('*'):
-                if not exported_file.is_file():
-                    continue
-                dest = tmp_dir / exported_file.name
-                if dest.exists():
-                    dest = self._find_unique_path(dest)
-                shutil.move(str(exported_file), str(dest))
-
-            shutil.rmtree(source_subdir, ignore_errors=True)
+        # and consolidate into the shared tmp dir. See
+        # _collect_source_exports for the full naming-convention
+        # contract (why filenames stay content-derived, not source-
+        # prefixed). Numeric suffixes are only added on same-name
+        # collisions between sources.
+        total_exported = self._collect_source_exports(
+            projects, tmp_dir, result
+        )
 
         result.chats_exported = total_exported
 
@@ -448,6 +487,67 @@ class AutoExporter:
         print_colored(f"   → {summary}", Colors.GREEN)
 
         return result
+
+    def _collect_source_exports(
+        self,
+        projects: List[ProjectInfo],
+        tmp_dir: Path,
+        result: ExportResult,
+    ) -> int:
+        """Export each source project to tmp and consolidate filenames.
+
+        Exports each project to an isolated subdirectory first to prevent
+        within-batch overwrites, then moves files into the shared tmp_dir.
+
+        --- FILENAME NAMING CONVENTION (by design) ---
+        Filenames are generated by export_project_chats() using the
+        existing content-derived naming: LLM-generated titles or first
+        user message, same as claude-chat-manager.py single exports.
+        This is intentional — filenames reflect conversation content,
+        NOT source identity. Do NOT add source/project prefixes to
+        filenames; the ChatMerger handles deduplication via content
+        fingerprinting (first N message pairs), not by filename matching.
+        See: src/exporters.py → _generate_book_filename()
+
+        On same-name collision between sources, a numeric suffix (-2,
+        -3) is appended. This is safe because ChatMerger matches by
+        content, not name.
+
+        Args:
+            projects: Source projects to export.
+            tmp_dir: Shared target tmp directory to consolidate into.
+            result: ExportResult to record per-project errors into.
+
+        Returns:
+            Total number of files exported across all projects.
+        """
+        total_exported = 0
+        source_subdirs: List[Tuple[Path, ProjectInfo]] = []
+
+        for project_info in projects:
+            source_subdir = tmp_dir / _safe_dirname(
+                f"{project_info.source.value}_{project_info.name}"
+            )
+            source_subdir.mkdir(parents=True, exist_ok=True)
+            exported = self._export_project(
+                project_info, source_subdir, result
+            )
+            total_exported += exported
+            source_subdirs.append((source_subdir, project_info))
+
+        # Consolidate: move files from isolated subdirs to shared tmp.
+        for source_subdir, _ in source_subdirs:
+            for exported_file in source_subdir.rglob('*'):
+                if not exported_file.is_file():
+                    continue
+                dest = tmp_dir / exported_file.name
+                if dest.exists():
+                    dest = self._find_unique_path(dest)
+                shutil.move(str(exported_file), str(dest))
+
+            shutil.rmtree(source_subdir, ignore_errors=True)
+
+        return total_exported
 
     def _export_project(
         self,
@@ -631,28 +731,6 @@ class AutoExporter:
             if not candidate.exists():
                 return candidate
             counter += 1
-
-    def _count_project_chats(self, project_info: ProjectInfo) -> int:
-        """Count chat files in a project (for dry run).
-
-        Args:
-            project_info: Source project information.
-
-        Returns:
-            Number of chat files found.
-        """
-        try:
-            files = get_project_chat_files(
-                project_info.path,
-                source=project_info.source,
-                session_ids=project_info.session_ids,
-            )
-            return len(files)
-        except Exception as e:
-            logger.warning(
-                f"Failed to count chats for {project_info.name}: {e}"
-            )
-            return 0
 
 
 def print_results(results: List[ExportResult]) -> None:

@@ -617,12 +617,18 @@ class TestDryRun:
             _make_project_info("my-project", ChatSource.CLAUDE_DESKTOP),
         ]
 
+        def mock_export(project_path, export_dir, format_type, source, **kwargs):
+            # Simulate two exported chats in the tmp export directory.
+            f1 = export_dir / "chat-one.md"
+            f2 = export_dir / "chat-two.md"
+            _write_book_md(f1, "hello", "hi there")
+            _write_book_md(f2, "another", "ok")
+            return [f1, f2]
+
         with patch(
             'src.auto_exporter.list_all_projects', return_value=projects
         ), patch(
-            'src.auto_exporter.get_project_chat_files', return_value=[
-                Path("/fake/chat1.jsonl"), Path("/fake/chat2.jsonl"),
-            ]
+            'src.auto_exporter.export_project_chats', side_effect=mock_export
         ):
             exporter = AutoExporter(root_dir, cfg, dry_run=True)
             results = exporter.dry_run_report()
@@ -649,10 +655,13 @@ class TestDryRun:
             _make_project_info("proj-a", ChatSource.CLAUDE_DESKTOP),
         ]
 
+        def mock_export(project_path, export_dir, format_type, source, **kwargs):
+            return []
+
         with patch(
             'src.auto_exporter.list_all_projects', return_value=projects
         ), patch(
-            'src.auto_exporter.get_project_chat_files', return_value=[]
+            'src.auto_exporter.export_project_chats', side_effect=mock_export
         ):
             exporter = AutoExporter(root_dir, cfg, dry_run=True)
             results = exporter.dry_run_report()
@@ -660,6 +669,55 @@ class TestDryRun:
         assert len(results) == 1
         assert "project-alpha" in results[0].target_name
         assert ("proj-a", ChatSource.CLAUDE_DESKTOP) in results[0].sources
+
+    def test_dry_run_reports_accurate_merge_counts(
+        self, root_dir: Path, config_path: Path
+    ) -> None:
+        """Dry run should populate new/update/skip via real merge analysis."""
+        cfg = _create_mapping_config(config_path, root_dir, {
+            "claude:my-project": {
+                "target": "project-alpha",
+                "docs_chats_path": "docs/chats",
+                "action": "export",
+                "confirmed": True,
+            },
+        })
+
+        target_dir = root_dir / "project-alpha" / "docs" / "chats"
+        # Pre-existing file that matches one exported chat (will be SKIP).
+        _write_book_md(target_dir / "existing.md", "hello", "hi there")
+        files_before = set(target_dir.glob("*"))
+
+        projects = [
+            _make_project_info("my-project", ChatSource.CLAUDE_DESKTOP),
+        ]
+
+        def mock_export(project_path, export_dir, format_type, source, **kwargs):
+            # Two exports: one duplicates the existing file (→ skip),
+            # one is brand new (→ new).
+            f1 = export_dir / "chat-one.md"
+            f2 = export_dir / "chat-two.md"
+            _write_book_md(f1, "hello", "hi there")
+            _write_book_md(f2, "brand new question", "brand new answer")
+            return [f1, f2]
+
+        with patch(
+            'src.auto_exporter.list_all_projects', return_value=projects
+        ), patch(
+            'src.auto_exporter.export_project_chats', side_effect=mock_export
+        ):
+            exporter = AutoExporter(root_dir, cfg, dry_run=True)
+            results = exporter.dry_run_report()
+
+        # Target must remain untouched.
+        assert set(target_dir.glob("*")) == files_before
+        assert len(results) == 1
+        r = results[0]
+        # One new, one skipped (matches existing by fingerprint).
+        assert r.chats_exported == 2
+        assert r.new_files + r.skipped_files + r.updated_files == 2
+        assert r.new_files >= 1
+        assert r.skipped_files >= 1
 
 
 # ---------------------------------------------------------------------------

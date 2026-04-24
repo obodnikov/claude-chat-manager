@@ -55,6 +55,9 @@ logs/
 *.temp
 tmp/
 
-#KIRO
+# KIRO
 .hypothesis/
 .code_review
+
+# Semantic Index
+.index/
