@@ -163,7 +163,14 @@ def discover_kiro_workspaces(kiro_data_dir: Path) -> List[KiroWorkspace]:
         try:
             # Decode the workspace path
             decoded_path = decode_workspace_path(encoded_path)
-            workspace_name = Path(decoded_path).name or decoded_path
+            # Use PureWindowsPath to correctly extract basename from
+            # Windows-style paths even when running on POSIX systems
+            from pathlib import PurePosixPath, PureWindowsPath
+            # Try Windows first (handles backslash separators)
+            name = PureWindowsPath(decoded_path).name
+            if not name:
+                name = PurePosixPath(decoded_path).name
+            workspace_name = name or decoded_path
         except ValueError:
             # If decoding fails, use the encoded path as fallback
             workspace_name = encoded_path

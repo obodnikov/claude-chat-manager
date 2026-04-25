@@ -410,10 +410,22 @@ Examples:
         help='Generate detailed merge report to file'
     )
 
-    parser.add_argument(
+    log_group = parser.add_mutually_exclusive_group()
+    log_group.add_argument(
         '--verbose', '-v',
         action='store_true',
-        help='Verbose output (debug logging)'
+        help='Verbose output (shortcut for --log-level DEBUG)'
+    )
+    log_group.add_argument(
+        '--quiet', '-q',
+        action='store_true',
+        help='Suppress INFO/WARNING logs (shortcut for --log-level ERROR)'
+    )
+    log_group.add_argument(
+        '--log-level',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'QUIET'],
+        default=None,
+        help='Set logging level (default: INFO). QUIET is an alias for ERROR.'
     )
 
     args = parser.parse_args()
@@ -434,9 +446,17 @@ Examples:
         )
         return 1
 
-    # Set logging level
+    # Set logging level (verbose/quiet/log-level are mutually exclusive).
     if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+        resolved_level = logging.DEBUG
+    elif args.quiet:
+        resolved_level = logging.ERROR
+    elif args.log_level:
+        resolved_level = logging.ERROR if args.log_level == 'QUIET' \
+            else getattr(logging, args.log_level)
+    else:
+        resolved_level = logging.INFO
+    logging.getLogger().setLevel(resolved_level)
 
     # Validate directories
     if not args.source.exists():

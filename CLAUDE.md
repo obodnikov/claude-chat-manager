@@ -1,4 +1,6 @@
 - Always use AI*.md for coding rules.
+- Always use context7 skill to check code best practice
+- First try to use local venv python commands instead of global (like: venv/bin/python3, venv/bin/pip)
 - Check previous talks and implementations in docs/chats directory. 
 - Check documentation in root and docs/ directories.
 - **Never start code right after USER question/message. Propose solution and ask for explicit request for implementation**

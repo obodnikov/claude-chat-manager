@@ -75,6 +75,8 @@ This document serves as the **architectural source of truth** for Claude Chat Ma
 claude-chat-manager/
 ├── claude-chat-manager.py      # Main entry point (CLI arg parsing, logging setup)
 ├── sanitize-chats.py           # Post-processing tool for existing exports
+├── merge-chats.py              # Intelligent chat merge utility
+├── auto-export.py              # Full export+merge pipeline orchestrator (CLI)
 ├── claude-reader.py            # Legacy monolithic script (deprecated)
 │
 ├── src/                        # Core application modules
@@ -97,6 +99,9 @@ claude-chat-manager/
 │   ├── projects.py             # Project discovery, search (~180 lines)
 │   ├── sanitizer.py            # Sensitive data detection/redaction (~500 lines)
 │   ├── search.py               # Content search across chats (~120 lines)
+│   ├── project_matcher.py      # Conversation project → filesystem folder matching (~950 lines)
+│   ├── auto_exporter.py        # Auto-export pipeline orchestrator (~700 lines)
+│   ├── chat_merger.py          # Intelligent chat file merging (fingerprinting)
 │   ├── wiki_generator.py       # Wiki generation with LLM titles (~600 lines)
 │   └── wiki_parser.py          # Parse existing wiki files (~200 lines)
 │
@@ -309,6 +314,40 @@ Sessions sharing the same `cwd` are grouped into one logical project.
 **Key Classes:**
 - `OpenRouterClient` - HTTP client for OpenRouter API
 - `Sanitizer` - Pattern matching and redaction engine
+
+### 4.5 Auto-Export Pipeline
+**Modules:** `project_matcher.py`, `auto_exporter.py`, `chat_merger.py`, `auto-export.py`
+
+**Responsibilities:**
+- Discover conversation projects across all sources
+- Map conversation project names → filesystem folders under a user-provided root
+- Persist mappings in a JSON config (`~/.config/claude-chat-manager/project-mapping.json`)
+- Export and merge chats into each project's `docs/chats/` folder in a single run
+- Group multiple sources (Claude/Kiro/Codex) that target the same folder
+
+**Key Classes:**
+- `ProjectMapping` - Single project mapping entry (source, target, action)
+- `MappingConfig` - Load/save/query the mapping JSON config
+- `ProjectMatcher` - Matching engine (workspace path, Claude name decode, basename, fuzzy)
+- `AutoExporter` - Pipeline orchestrator (discover → group → export → merge)
+- `ExportResult` - Per-target summary with new/updated/skipped counts
+- `ChatMerger` - Content-fingerprint-based merge (used by AutoExporter and the standalone `merge-chats.py`)
+
+**Key Functions:**
+- `ProjectMatcher.match_project()` - Runs the full match strategy chain for one project
+- `ProjectMatcher.detect_docs_chats_dir()` - Heuristic search for the chat output folder
+- `AutoExporter.run()` - Execute the full export+merge pipeline
+- `AutoExporter.dry_run_report()` - Preview mode — no writes
+
+**Matching Strategy (priority order):**
+1. Config lookup (already mapped and confirmed)
+2. Workspace path exact match (Kiro `workspace_path`, Codex `cwd`)
+3. Claude project name decode (`Users-Mike-Src-Project` → path segments)
+4. Basename exact match (case-insensitive)
+5. Fuzzy token-based match (threshold ≥ 0.8)
+6. User prompt (in `--learn` mode) or skip
+
+**CLI Entry Point:** `auto-export.py` at project root, same pattern as `merge-chats.py` and `sanitize-chats.py`. See `docs/AUTO_EXPORT.md` for the user guide.
 
 ---
 
@@ -559,6 +598,11 @@ WIKI_GENERATE_TITLES = os.getenv('WIKI_GENERATE_TITLES') or true
 - `filters.py` - Chat filtering (thresholds may be tuned)
 - `wiki_generator.py` - Wiki generation (may add features)
 
+**Auto-Export Pipeline:**
+- `project_matcher.py` - Matching engine and config management (new feature, heuristics may evolve)
+- `auto_exporter.py` - Pipeline orchestrator (new feature)
+- `chat_merger.py` - Content-fingerprint merge engine (new feature, thresholds may be tuned)
+
 **CLI Interface:**
 - `cli.py` - Interactive browser (UX improvements possible)
 - `display.py` - Terminal pager (platform-specific tweaks)
@@ -747,6 +791,9 @@ c) Refactor existing code to make room?"
 **"How does Codex CLI support work?"**
 → See `src/codex_parser.py` (parsing), `src/codex_projects.py` (discovery), `docs/CODEX_IMPLEMENTATION.md` (design), and README.md (usage)
 
+**"How does auto-export work?"**
+→ See `docs/AUTO_EXPORT.md` (user guide), `docs/AUTO_EXPORT_PLAN.md` (design), `src/project_matcher.py` (matching), `src/auto_exporter.py` (pipeline), and `auto-export.py` (CLI)
+
 **"How do I add support for a new chat source?"**
 → Study `src/kiro_parser.py` and `src/codex_parser.py` as examples, then:
 1. Create parser module for the new format
@@ -789,7 +836,7 @@ c) Refactor existing code to make room?"
 ---
 
 
-**Document Version:** 1.3  
-**Last Updated:** 2026-02-20  
-**Total Lines:** ~480  
-**Status:** ✅ Complete (Claude Desktop, Kiro IDE, and Codex CLI support)
+**Document Version:** 1.4  
+**Last Updated:** 2026-04-24  
+**Total Lines:** ~520  
+**Status:** ✅ Complete (Claude Desktop, Kiro IDE, Codex CLI, Auto-Export pipeline)
