@@ -138,8 +138,12 @@ class AutoExporter:
         # 2. Group by target
         grouped = self._group_projects_by_target(all_projects)
 
+        # 2b. Flag projects with no mapping entry at all (not intentional skips)
+        unmapped = self._find_unmapped_projects(all_projects)
+
         if not grouped:
             print_colored("ℹ️  No projects mapped for export.", Colors.YELLOW)
+            self._print_unmapped_warning(unmapped)
             return []
 
         # 3. Export and merge each target
@@ -167,6 +171,9 @@ class AutoExporter:
                     Colors.CYAN
                 )
 
+        # 5. Warn about unmapped conversation projects (skipped silently)
+        self._print_unmapped_warning(unmapped)
+
         return results
 
     def dry_run_report(self) -> List[ExportResult]:
@@ -185,9 +192,11 @@ class AutoExporter:
         """
         all_projects = list_all_projects(self.source_filter)
         grouped = self._group_projects_by_target(all_projects)
+        unmapped = self._find_unmapped_projects(all_projects)
 
         if not grouped:
             print_colored("ℹ️  No projects mapped for export.", Colors.YELLOW)
+            self._print_unmapped_warning(unmapped)
             return []
 
         results: List[ExportResult] = []
@@ -252,6 +261,9 @@ class AutoExporter:
                 Colors.RED,
             )
         print(f"{'═' * 60}")
+
+        # Warn about unmapped conversation projects (skipped silently)
+        self._print_unmapped_warning(unmapped)
 
         return results
 
@@ -395,6 +407,65 @@ class AutoExporter:
             grouped[group_key][1].append(project_info)
 
         return grouped
+
+    def _find_unmapped_projects(
+        self,
+        projects: List[ProjectInfo],
+    ) -> List[ProjectInfo]:
+        """Find conversation projects with no mapping entry at all.
+
+        Distinguishes "never learned" (user hasn't run ``--learn`` since
+        the project appeared) from "intentionally skipped" (user chose
+        skip during learn mode, which writes a mapping with action='skip').
+        Only the former indicates chats are silently falling through.
+
+        Args:
+            projects: All discovered conversation projects.
+
+        Returns:
+            Projects with no entry in the mapping config. Preserves
+            discovery order.
+        """
+        unmapped: List[ProjectInfo] = []
+        for project_info in projects:
+            mapping_key = (
+                f"{project_info.source.value}{_KEY_SEP}{project_info.name}"
+            )
+            if self.mapping_config.get_mapping(mapping_key) is None:
+                unmapped.append(project_info)
+        return unmapped
+
+    @staticmethod
+    def _print_unmapped_warning(unmapped: List[ProjectInfo]) -> None:
+        """Print a warning block for conversation projects with no mapping.
+
+        Highlights chats that were skipped because the project has never
+        been mapped via ``--learn``. Nothing is printed when the list is
+        empty.
+
+        Args:
+            unmapped: Projects missing from the mapping config.
+        """
+        if not unmapped:
+            return
+
+        print_colored(
+            f"\n⚠️  Unmapped projects: {len(unmapped)} "
+            f"(chats skipped — no project mapping)",
+            Colors.YELLOW,
+        )
+        for project_info in unmapped:
+            label = SOURCE_LABELS.get(
+                project_info.source, project_info.source.value
+            )
+            print_colored(
+                f"    [{label}] {project_info.name}", Colors.YELLOW
+            )
+        print_colored(
+            "    → Run `auto-export.py --root <root> --learn --update` "
+            "to map them.",
+            Colors.YELLOW,
+        )
 
     def _process_target(
         self,
