@@ -58,6 +58,7 @@ tmp/
 # KIRO
 .hypothesis/
 .code_review
+.kiro/
 
 # Semantic Index
 .index/

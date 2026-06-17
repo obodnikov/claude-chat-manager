@@ -18,11 +18,13 @@ class ChatSource(Enum):
         CLAUDE_DESKTOP: Chat from Claude Desktop application
         KIRO_IDE: Chat from Kiro IDE
         CODEX: Chat from OpenAI Codex CLI
+        CLINE_VSCODE: Chat from Cline (VS Code extension)
         UNKNOWN: Unknown or unspecified source
     """
     CLAUDE_DESKTOP = "claude"
     KIRO_IDE = "kiro"
     CODEX = "codex"
+    CLINE_VSCODE = "cline-vscode"
     UNKNOWN = "unknown"
 
 

@@ -26,8 +26,9 @@ class TestChatSource:
         assert "claude" in sources
         assert "kiro" in sources
         assert "codex" in sources
+        assert "cline-vscode" in sources
         assert "unknown" in sources
-        assert len(sources) == 4
+        assert len(sources) == 5
 
 
 class TestChatMessage:

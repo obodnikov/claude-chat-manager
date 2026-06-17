@@ -74,6 +74,7 @@ class Config:
         self._claude_dir: Optional[Path] = None
         self._kiro_dir: Optional[Path] = None
         self._codex_dir: Optional[Path] = None
+        self._cline_vscode_dir: Optional[Path] = None
         self._load_config()
 
     def _load_config(self) -> None:
@@ -112,6 +113,15 @@ class Config:
                 self._codex_dir = Path.home() / '.codex'
             logger.debug(f"Using default Codex directory: {self._codex_dir}")
 
+        # Cline data directory (VS Code globalStorage)
+        cline_dir_env = os.getenv('CLINE_VSCODE_DATA_DIR')
+        if cline_dir_env:
+            self._cline_vscode_dir = Path(cline_dir_env)
+            logger.info(f"Using CLINE_VSCODE_DATA_DIR from environment: {self._cline_vscode_dir}")
+        else:
+            self._cline_vscode_dir = self._get_default_cline_vscode_dir()
+            logger.debug(f"Using default Cline directory: {self._cline_vscode_dir}")
+
     def _get_default_kiro_dir(self) -> Path:
         """Get OS-specific default Kiro data directory.
         
@@ -134,6 +144,30 @@ class Config:
         else:
             # Linux: ~/.config/Kiro/User/globalStorage/kiro.kiroagent/
             return Path.home() / '.config' / 'Kiro' / 'User' / 'globalStorage' / 'kiro.kiroagent'
+
+    def _get_default_cline_vscode_dir(self) -> Path:
+        """Get OS-specific default Cline data directory (VS Code globalStorage).
+
+        Returns:
+            Path to default Cline data directory based on operating system.
+        """
+        ext = 'saoudrizwan.claude-dev'
+        home = Path.home()
+        
+        if sys.platform == 'darwin':
+            # macOS: ~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/
+            base = home / 'Library' / 'Application Support' / 'Code' / 'User' / 'globalStorage'
+        elif sys.platform == 'win32':
+            # Windows: %APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\
+            appdata = os.environ.get('APPDATA')
+            if not appdata:
+                raise ValueError('APPDATA environment variable not set on Windows')
+            base = Path(appdata) / 'Code' / 'User' / 'globalStorage'
+        else:
+            # Linux: ~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/
+            base = home / '.config' / 'Code' / 'User' / 'globalStorage'
+        
+        return base / ext
 
     def validate_kiro_directory(self) -> bool:
         """Validate that the Kiro data directory exists.
@@ -177,6 +211,15 @@ class Config:
         """
         return self._codex_dir
 
+    @property
+    def cline_vscode_data_dir(self) -> Path:
+        """Get the Cline data directory path.
+
+        Returns:
+            Path to Cline data directory (VS Code globalStorage).
+        """
+        return self._cline_vscode_dir
+
     def validate_codex_directory(self) -> bool:
         """Validate that the Codex data directory exists.
 
@@ -193,6 +236,30 @@ class Config:
         if not sessions_dir.exists():
             logger.warning(f"Codex sessions directory not found: {sessions_dir}")
             return False
+        return True
+
+    def validate_cline_vscode_directory(self) -> bool:
+        """Validate that the Cline data directory exists and is usable.
+
+        Discovery requires state/taskHistory.json, so validation checks
+        for that file specifically.
+
+        Returns:
+            True if directory exists and contains state/taskHistory.json.
+        """
+        if not self._cline_vscode_dir or not self._cline_vscode_dir.exists():
+            logger.warning(f"Cline data directory not found: {self._cline_vscode_dir}")
+            return False
+        if not self._cline_vscode_dir.is_dir():
+            logger.warning(f"Cline data path is not a directory: {self._cline_vscode_dir}")
+            return False
+
+        # Discovery requires state/taskHistory.json
+        task_history = self._cline_vscode_dir / 'state' / 'taskHistory.json'
+        if not task_history.exists():
+            logger.warning(f"Cline taskHistory.json not found: {task_history}")
+            return False
+
         return True
 
     def validate_llm_config(self) -> list:
@@ -237,6 +304,7 @@ class Config:
             - ChatSource.CLAUDE_DESKTOP: Show only Claude Desktop chats
             - ChatSource.KIRO_IDE: Show only Kiro IDE chats
             - ChatSource.CODEX: Show only Codex CLI chats
+            - ChatSource.CLINE_VSCODE: Show only Cline (VS Code) chats
             - None: Show all sources (also the default when not configured)
         """
         source = os.getenv('CHAT_SOURCE', '').lower()
@@ -248,6 +316,10 @@ class Config:
             return ChatSource.KIRO_IDE
         elif source == 'codex':
             return ChatSource.CODEX
+        elif source in ('cline-vscode', 'cline'):
+            # 'cline' is a back-compat alias for the VS Code extension source.
+            # Once the Cline CLI source lands, 'cline' becomes an umbrella for both.
+            return ChatSource.CLINE_VSCODE
         else:
             logger.warning(f"Invalid CHAT_SOURCE: {source}, defaulting to auto-detect")
             return None
@@ -257,10 +329,11 @@ class Config:
         """Check whether CHAT_SOURCE env var is explicitly configured.
 
         Returns:
-            True if CHAT_SOURCE is set to a valid value (claude, kiro, codex, all).
+            True if CHAT_SOURCE is set to a valid value
+            (claude, kiro, codex, cline-vscode, cline, all).
         """
         source = os.getenv('CHAT_SOURCE', '').lower()
-        return source in ('claude', 'kiro', 'codex', 'all')
+        return source in ('claude', 'kiro', 'codex', 'cline-vscode', 'cline', 'all')
 
     @property
     def default_export_format(self) -> str:
