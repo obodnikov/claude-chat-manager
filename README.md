@@ -2,7 +2,7 @@
 
 A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat files with an intuitive interface and Unix `less`-like paging for smooth reading experience.
 
-**Version 3.1.0** - Now with steering content filtering! Browse and export chats from Claude Desktop, Kiro IDE, and OpenAI Codex CLI.
+**Version 3.2.0** - Now with Cline VS Code extension support! Browse and export chats from Claude Desktop, Kiro IDE, OpenAI Codex CLI, and the Cline VS Code extension.
 
 ## ✨ Features
 
@@ -1016,7 +1016,7 @@ All existing features work with Codex sessions:
 - **Session Metadata**: Extracts model name, git branch, CLI version, and timestamps
 - **Smart Naming**: Project names derived from the working directory path
 
-## � Cline VS Code Extension Support
+## 🧩 Cline VS Code Extension Support (NEW in v3.2.0!)
 
 Claude Chat Manager supports the [Cline VS Code extension](https://marketplace.visualstudio.com/items?itemName=saoudrizwan.claude-dev) alongside Claude Desktop, Kiro IDE, and Codex CLI.
 
@@ -1080,7 +1080,24 @@ Tool calls, checkpoints, and lifecycle events are automatically filtered; only a
 - ✅ Sensitive data sanitization
 - ✅ Smart filtering of trivial chats
 
-## �🛠️ What's New
+## 🛠️ What's New
+
+### v3.2.0 - Cline VS Code Extension Support (June 2026)
+
+**New Features:**
+- 🧩 **Cline VS Code Support**: Browse and export conversations from the [Cline VS Code extension](https://marketplace.visualstudio.com/items?itemName=saoudrizwan.claude-dev) as a fourth chat source
+- 🎯 **Source Selection**: `--source cline-vscode` (with `cline` as a convenient alias) to filter to Cline tasks
+- 📁 **Unified Listing**: Cline tasks appear in the combined view with a `[Cline/VSC]` source indicator
+- 🗂️ **Project Grouping**: Tasks are grouped into projects by `cwdOnTaskInitialization` (working directory)
+- ⚙️ **Configuration**: `CLINE_VSCODE_DATA_DIR` environment variable for VS Code forks (Cursor, Windsurf, VSCodium, Insiders)
+
+**Technical Details:**
+- New `cline_vscode_parser.py` module for parsing Cline task files
+- Primary (`ui_messages.json`) / fallback (`api_conversation_history.json`) parsing strategy
+- Automatic filtering of tool calls, checkpoints, and lifecycle events — only user/assistant conversation is exported
+- Task discovery via `state/taskHistory.json` index, grouped by working directory
+- Full integration with existing export, search, sanitization, and filtering features
+- OS-aware auto-detection of the `saoudrizwan.claude-dev` globalStorage directory
 
 ### v3.1.0 - Steering Content Filtering (March 2026)
 
@@ -1413,14 +1430,14 @@ This tool is provided as-is for personal use with Claude Desktop chat histories.
 
 ## 🎯 Project Stats
 
-- **Version**: 3.1.0
+- **Version**: 3.2.0
 - **Python**: 3.9+
 - **Modules**: 19 source modules
 - **Tests**: 474 unit tests (100% passing)
 - **Coverage**: Core modules 52-100%
 - **Type Hints**: 100% coverage
 - **Documentation**: Complete with examples and enhancement guide
-- **Chat Sources**: Claude Desktop + Kiro IDE + Codex CLI
+- **Chat Sources**: Claude Desktop + Kiro IDE + Codex CLI + Cline VS Code
 - **Utilities**:
   - **merge-chats.py** - Intelligent chat file merging
   - **sanitize-chats.py** - Sensitive data sanitization
@@ -1430,10 +1447,10 @@ This tool is provided as-is for personal use with Claude Desktop chat histories.
   - Machine-hostname-based directory naming
   - AI-powered wiki with update/rebuild capabilities
   - Shared filtering architecture across modes
-  - Multi-source support (Claude Desktop + Kiro IDE + Codex CLI)
+  - Multi-source support (Claude Desktop + Kiro IDE + Codex CLI + Cline VS Code)
 
 ---
 
 **Made with ❤️ for the Claude community**
 
-*Version 3.1 - Claude Desktop, Kiro IDE, and Codex CLI support with steering content filtering!*
+*Version 3.2 - Claude Desktop, Kiro IDE, Codex CLI, and Cline VS Code extension support!*
