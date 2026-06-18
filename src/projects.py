@@ -3,10 +3,11 @@
 This module handles discovery, listing, and searching of Claude projects.
 """
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from datetime import datetime
 from typing import List, Optional
 import logging
+import os
 
 from .config import config
 from .exceptions import ProjectNotFoundError
@@ -15,6 +16,68 @@ from .formatters import clean_project_name
 from .parser import count_messages_in_file
 
 logger = logging.getLogger(__name__)
+
+
+def _workspace_path_basename(workspace_path: str) -> str:
+    """Return the final path component of a workspace path, cross-platform.
+
+    Cline stores the raw OS path in cwdOnTaskInitialization. When the data
+    was produced on Windows and is read on POSIX (or vice-versa), the native
+    Path() class may not split the path correctly. We check both PurePosixPath
+    and PureWindowsPath and return whichever gives a non-empty, different name
+    from the full path, falling back to the native Path result.
+
+    Args:
+        workspace_path: Raw cwd string, e.g. '/home/user/repo' or
+            'C:\\Users\\me\\repo'.
+
+    Returns:
+        The final path component, e.g. 'repo'.
+    """
+    native_name = Path(workspace_path).name
+    if native_name and native_name != workspace_path:
+        return native_name
+    # Try POSIX
+    posix_name = PurePosixPath(workspace_path).name
+    if posix_name and posix_name != workspace_path:
+        return posix_name
+    # Try Windows
+    win_name = PureWindowsPath(workspace_path).name
+    if win_name and win_name != workspace_path:
+        return win_name
+    return native_name
+
+
+def _cline_workspace_to_project_info(
+    workspace: "ClineVscodeWorkspace",  # type: ignore[name-defined]  # noqa: F821
+    cline_vscode_data_dir: Path,
+) -> ProjectInfo:
+    """Convert a ClineVscodeWorkspace to a ProjectInfo.
+
+    Centralises field construction to avoid duplicated logic in
+    list_all_projects() and find_project_by_name().
+
+    Args:
+        workspace: Discovered Cline VS Code workspace.
+        cline_vscode_data_dir: Root Cline data directory; used to build
+            the canonical tasks/ path stored in ProjectInfo.path.
+
+    Returns:
+        ProjectInfo with source=CLINE_VSCODE.
+    """
+    return ProjectInfo(
+        name=workspace.workspace_name,
+        path=cline_vscode_data_dir / 'tasks',
+        file_count=workspace.session_count,
+        total_messages=0,
+        last_modified=workspace.last_modified,
+        sort_timestamp=None,
+        source=ChatSource.CLINE_VSCODE,
+        workspace_path=workspace.workspace_path,
+        # Store task IDs (not full paths) so get_project_chat_files()
+        # can resolve them safely under the tasks directory.
+        session_ids=[t.task_id for t in workspace.tasks],
+    )
 
 
 def get_project_info(project_dir: Path, source: ChatSource = ChatSource.CLAUDE_DESKTOP) -> ProjectInfo:
@@ -78,6 +141,7 @@ def list_all_projects(source_filter: Optional[ChatSource] = None) -> List[Projec
     scan_claude = source_filter is None or source_filter == ChatSource.CLAUDE_DESKTOP
     scan_kiro = source_filter is None or source_filter == ChatSource.KIRO_IDE
     scan_codex = source_filter is None or source_filter == ChatSource.CODEX
+    scan_cline_vscode = source_filter is None or source_filter == ChatSource.CLINE_VSCODE
     
     # Scan Claude Desktop projects
     if scan_claude:
@@ -149,7 +213,26 @@ def list_all_projects(source_filter: Optional[ChatSource] = None) -> List[Projec
                 logger.warning(f"Error discovering Codex projects: {e}")
         else:
             logger.debug("Codex data directory not found, skipping Codex projects")
-    
+
+    # Scan Cline VS Code extension projects
+    if scan_cline_vscode:
+        if config.validate_cline_vscode_directory():
+            try:
+                from .cline_vscode_projects import discover_cline_vscode_workspaces
+                cline_vscode_data_dir = config.cline_vscode_data_dir
+                cline_workspaces = discover_cline_vscode_workspaces(cline_vscode_data_dir)
+
+                for workspace in cline_workspaces:
+                    projects.append(_cline_workspace_to_project_info(workspace, cline_vscode_data_dir))
+                logger.info(
+                    f"Found {len([p for p in projects if p.source == ChatSource.CLINE_VSCODE])} "
+                    f"Cline VS Code projects"
+                )
+            except Exception as e:
+                logger.warning(f"Error discovering Cline VS Code projects: {e}")
+        else:
+            logger.debug("Cline VS Code data directory not found, skipping Cline VS Code projects")
+
     if not projects:
         raise ProjectNotFoundError("No projects found in any configured source")
     
@@ -172,6 +255,7 @@ def find_project_by_name(project_name: str, source_filter: Optional[ChatSource] 
     search_claude = source_filter is None or source_filter == ChatSource.CLAUDE_DESKTOP
     search_kiro = source_filter is None or source_filter == ChatSource.KIRO_IDE
     search_codex = source_filter is None or source_filter == ChatSource.CODEX
+    search_cline_vscode = source_filter is None or source_filter == ChatSource.CLINE_VSCODE
     
     # Search Claude Desktop projects
     if search_claude:
@@ -271,7 +355,27 @@ def find_project_by_name(project_name: str, source_filter: Optional[ChatSource] 
                         )
             except Exception as e:
                 logger.warning(f"Error searching Codex projects: {e}")
-    
+
+    # Search Cline VS Code extension projects
+    if search_cline_vscode:
+        if config.validate_cline_vscode_directory():
+            try:
+                from .cline_vscode_projects import discover_cline_vscode_workspaces
+                cline_vscode_data_dir = config.cline_vscode_data_dir
+                cline_workspaces = discover_cline_vscode_workspaces(cline_vscode_data_dir)
+
+                for workspace in cline_workspaces:
+                    if workspace.workspace_name.lower() == project_name.lower():
+                        logger.debug(f"Found Cline VS Code project: {workspace.workspace_path}")
+                        return _cline_workspace_to_project_info(workspace, cline_vscode_data_dir)
+
+                    workspace_basename = _workspace_path_basename(workspace.workspace_path)
+                    if workspace_basename.lower() == project_name.lower():
+                        logger.debug(f"Found Cline VS Code project by path: {workspace.workspace_path}")
+                        return _cline_workspace_to_project_info(workspace, cline_vscode_data_dir)
+            except Exception as e:
+                logger.warning(f"Error searching Cline VS Code projects: {e}")
+
     logger.warning(f"Project not found: {project_name}")
     return None
 
@@ -346,6 +450,36 @@ def get_project_chat_files(
             chat_files = [Path(p) for p in session_ids if Path(p).exists()]
             chat_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
             return chat_files
+        return []
+
+    if source == ChatSource.CLINE_VSCODE:
+        # Cline VS Code: session_ids are task IDs (not full paths).
+        # Resolve each under project_path (the tasks/ directory) and verify
+        # the resolved path is still inside project_path to prevent traversal.
+        if session_ids:
+            tasks_root = project_path.resolve()
+            task_dirs: List[Path] = []
+            for task_id in session_ids:
+                # Reject IDs that look like paths (contain separators) or
+                # traversal components before even resolving.
+                if '/' in task_id or '\\' in task_id or '..' in task_id.split(os.sep):
+                    logger.warning(
+                        f"Rejected Cline task_id with path separator or traversal: {task_id!r}"
+                    )
+                    continue
+                candidate = (project_path / task_id).resolve()
+                # Confinement check: must be inside the tasks directory
+                try:
+                    candidate.relative_to(tasks_root)
+                except ValueError:
+                    logger.warning(
+                        f"Rejected Cline task path outside tasks root: {candidate}"
+                    )
+                    continue
+                if candidate.exists() and candidate.is_dir():
+                    task_dirs.append(candidate)
+            task_dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+            return task_dirs
         return []
 
     if not project_path.exists() or not project_path.is_dir():
