@@ -298,7 +298,10 @@ class Config:
     @property
     def chat_source_filter(self) -> Optional[ChatSource]:
         """Get configured chat source filter.
-        
+
+        Delegates to parse_source_filter() (src.cli_utils) so the CLI flag
+        and CHAT_SOURCE env var use identical mapping logic.
+
         Returns:
             ChatSource enum value or None for all sources.
             - ChatSource.CLAUDE_DESKTOP: Show only Claude Desktop chats
@@ -307,21 +310,12 @@ class Config:
             - ChatSource.CLINE_VSCODE: Show only Cline (VS Code) chats
             - None: Show all sources (also the default when not configured)
         """
-        source = os.getenv('CHAT_SOURCE', '').lower()
-        if not source or source == 'all':
-            return None  # None means show all / auto-detect
-        elif source == 'claude':
-            return ChatSource.CLAUDE_DESKTOP
-        elif source == 'kiro':
-            return ChatSource.KIRO_IDE
-        elif source == 'codex':
-            return ChatSource.CODEX
-        elif source in ('cline-vscode', 'cline'):
-            # 'cline' is a back-compat alias for the VS Code extension source.
-            # Once the Cline CLI source lands, 'cline' becomes an umbrella for both.
-            return ChatSource.CLINE_VSCODE
-        else:
-            logger.warning(f"Invalid CHAT_SOURCE: {source}, defaulting to auto-detect")
+        from .cli_utils import parse_source_filter
+        source = os.getenv('CHAT_SOURCE', '').strip()
+        try:
+            return parse_source_filter(source if source else None)
+        except ValueError:
+            logger.warning(f"Invalid CHAT_SOURCE: {source!r}, defaulting to auto-detect")
             return None
 
     @property
@@ -329,11 +323,11 @@ class Config:
         """Check whether CHAT_SOURCE env var is explicitly configured.
 
         Returns:
-            True if CHAT_SOURCE is set to a valid value
-            (claude, kiro, codex, cline-vscode, cline, all).
+            True if CHAT_SOURCE is set to a recognised value.
         """
-        source = os.getenv('CHAT_SOURCE', '').lower()
-        return source in ('claude', 'kiro', 'codex', 'cline-vscode', 'cline', 'all')
+        from .cli_utils import VALID_SOURCE_VALUES
+        source = os.getenv('CHAT_SOURCE', '').strip().lower()
+        return source in VALID_SOURCE_VALUES
 
     @property
     def default_export_format(self) -> str:

@@ -28,6 +28,7 @@ from src.projects import find_project_by_name
 from src.colors import print_colored, Colors
 from src.exceptions import ProjectNotFoundError, ExportError
 from src.models import ChatSource
+from src.cli_utils import parse_source_filter, SOURCE_CHOICES
 
 
 def perform_sanitize_preview(args: argparse.Namespace, project_path: Path) -> None:
@@ -195,9 +196,12 @@ Examples:
   %(prog)s --source claude                        # Skip detection, Claude Desktop only
   %(prog)s --source kiro                          # Skip detection, Kiro IDE only
   %(prog)s --source codex                         # Skip detection, Codex CLI only
+  %(prog)s --source cline-vscode                  # Skip detection, Cline VS Code only
+  %(prog)s --source cline                         # Same as --source cline-vscode (alias)
   %(prog)s --source all                           # Skip detection, all sources
   %(prog)s --source kiro "my-project"             # Browse Kiro project
   %(prog)s --source codex "my-project"            # Browse Codex project
+  %(prog)s --source cline-vscode "my-project"     # Browse Cline VS Code project
 
 Sanitization Examples:
   %(prog)s "my-project" -f book -o exports/ --sanitize            # Enable sanitization
@@ -229,8 +233,9 @@ Environment Variables:
                         default='pretty', help='Output format (default: pretty, book=clean markdown without timestamps, wiki=AI-generated single page)')
     parser.add_argument('-o', '--output', metavar='FILE', type=Path, help='Save output to file')
     parser.add_argument('-c', '--content', metavar='TERM', help='Search for content within chats')
-    parser.add_argument('--source', choices=['claude', 'kiro', 'codex', 'all'],
-                        default=None, help='Chat source: claude, kiro, codex, or all (omit to auto-detect)')
+    parser.add_argument('--source', choices=list(SOURCE_CHOICES),
+                        type=lambda s: s.strip().lower(),
+                        default=None, help='Chat source: claude, kiro, codex, cline-vscode (alias: cline), or all (omit to auto-detect)')
     parser.add_argument('--wiki', metavar='FILE', type=Path, help='Generate wiki page from all project chats (shortcut for -f wiki -o FILE)')
     parser.add_argument('--update', action='store_true', help='Update existing wiki file with new chats (use with --wiki)')
     parser.add_argument('--rebuild', action='store_true', help='Force full rebuild of existing wiki file (use with --wiki)')
@@ -293,23 +298,45 @@ Environment Variables:
     # Precedence: --source CLI flag > CHAT_SOURCE env > auto-detect
     source_filter = None
     source_explicit = args.source is not None  # User explicitly passed --source
-    if args.source == 'claude':
-        source_filter = ChatSource.CLAUDE_DESKTOP
-    elif args.source == 'kiro':
-        source_filter = ChatSource.KIRO_IDE
-    elif args.source == 'codex':
-        source_filter = ChatSource.CODEX
-    elif args.source == 'all':
-        source_filter = None  # None means all sources
-
-    # Check if Claude directory exists (only when explicitly requesting Claude-only source)
-    if source_explicit and source_filter == ChatSource.CLAUDE_DESKTOP:
-        if not config.claude_projects_dir.exists():
-            print_colored(f"❌ Claude projects directory not found: {config.claude_projects_dir}", Colors.RED)
-            print("Make sure you have Claude Desktop installed and have created projects.")
-            print("\nYou can set a custom directory with:")
-            print("  export CLAUDE_PROJECTS_DIR=/path/to/your/projects")
+    if args.source is not None:
+        try:
+            source_filter = parse_source_filter(args.source)
+        except ValueError as e:
+            # argparse already validates choices, so this should not normally
+            # trigger — guard defensively in case the function is called directly.
+            print_colored(f"❌ Invalid --source value: {e}", Colors.RED)
             sys.exit(1)
+
+    # Validate data directories for explicitly requested sources
+    if source_explicit and source_filter is not None:
+        if source_filter == ChatSource.CLAUDE_DESKTOP:
+            if not config.claude_projects_dir.exists():
+                print_colored(f"❌ Claude projects directory not found: {config.claude_projects_dir}", Colors.RED)
+                print("Make sure you have Claude Desktop installed and have created projects.")
+                print("\nYou can set a custom directory with:")
+                print("  export CLAUDE_PROJECTS_DIR=/path/to/your/projects")
+                sys.exit(1)
+        elif source_filter == ChatSource.KIRO_IDE:
+            if not config.validate_kiro_directory():
+                print_colored(f"❌ Kiro data directory not found: {config.kiro_data_dir}", Colors.RED)
+                print("Make sure you have Kiro IDE installed.")
+                print("\nYou can set a custom directory with:")
+                print("  export KIRO_DATA_DIR=/path/to/kiro/globalStorage")
+                sys.exit(1)
+        elif source_filter == ChatSource.CODEX:
+            if not config.validate_codex_directory():
+                print_colored(f"❌ Codex data directory not found: {config.codex_data_dir}", Colors.RED)
+                print("Make sure you have Codex CLI installed and have run sessions.")
+                print("\nYou can set a custom directory with:")
+                print("  export CODEX_DATA_DIR=/path/to/.codex")
+                sys.exit(1)
+        elif source_filter == ChatSource.CLINE_VSCODE:
+            if not config.validate_cline_vscode_directory():
+                print_colored(f"❌ Cline VS Code data directory not found: {config.cline_vscode_data_dir}", Colors.RED)
+                print("Make sure you have the Cline VS Code extension installed and have run tasks.")
+                print("\nYou can override the default path with:")
+                print("  export CLINE_VSCODE_DATA_DIR=/path/to/globalStorage/saoudrizwan.claude-dev")
+                sys.exit(1)
 
     # Handle command line arguments
     try:
@@ -443,13 +470,18 @@ Environment Variables:
                             # No extension - treat as directory name
                             export_dir = args.output
 
-                    # Create directory and export
+                    # Create directory and export.
+                    # source=project_info.source ensures Cline, Codex, and Kiro
+                    # exports use the correct file-discovery branch.
+                    # export_project_chats() accepts `source: ChatSource` as an
+                    # explicit named parameter (src/exporters.py).
                     export_dir.mkdir(parents=True, exist_ok=True)
                     exported_files = export_project_chats(
                         project_info.path,
                         export_dir,
                         args.format,
                         sanitize=sanitize_enabled,
+                        source=project_info.source,
                         keep_steering=args.keep_steering if args.keep_steering else None
                     )
                     print_colored(f"✅ Exported {len(exported_files)} chats to: {export_dir}/", Colors.GREEN)
