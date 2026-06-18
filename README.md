@@ -825,6 +825,25 @@ Sessions are organized by date (`YYYY/MM/DD/`) with JSONL rollout files:
 
 Each JSONL file contains a `session_meta` first line with `cwd` (working directory), which is used to group sessions into projects.
 
+### Cline VS Code Extension
+Cline stores tasks in VS Code's globalStorage:
+- **macOS**: `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/`
+- **Windows**: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\`
+- **Linux**: `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev\`
+
+Each task (conversation) is a directory under `tasks/<epoch-ms-id>/`:
+```
+saoudrizwan.claude-dev/
+├── state/
+│   └── taskHistory.json         # Discovery index (all tasks + cwd)
+└── tasks/
+    └── 1781697826685/
+        ├── ui_messages.json     # Primary: say/ask event log
+        └── api_conversation_history.json  # Fallback: Anthropic API transcript
+```
+
+Tasks are grouped into projects by `cwdOnTaskInitialization` (working directory).
+
 ## 🔄 Kiro IDE Support (NEW!)
 
 Claude Chat Manager now supports Kiro IDE chat files alongside Claude Desktop, providing a unified interface for all your AI conversations.
@@ -854,6 +873,8 @@ Use the `--source` (or `-s`) flag to control which chat sources to display:
 | `--source claude` | Claude Desktop only (default) |
 | `--source kiro` | Kiro IDE only |
 | `--source codex` | Codex CLI only |
+| `--source cline-vscode` | Cline VS Code extension only |
+| `--source cline` | Alias for `--source cline-vscode` |
 | `--source all` | All sources combined |
 
 ### Configuration
@@ -861,7 +882,7 @@ Use the `--source` (or `-s`) flag to control which chat sources to display:
 Set the default source in your `.env` file:
 
 ```bash
-# Default chat source (claude, kiro, codex, or all)
+# Default chat source (claude, kiro, codex, cline-vscode, cline, or all)
 CHAT_SOURCE=claude
 
 # Custom Kiro data directory (optional)
@@ -995,7 +1016,71 @@ All existing features work with Codex sessions:
 - **Session Metadata**: Extracts model name, git branch, CLI version, and timestamps
 - **Smart Naming**: Project names derived from the working directory path
 
-## 🛠️ What's New
+## � Cline VS Code Extension Support
+
+Claude Chat Manager supports the [Cline VS Code extension](https://marketplace.visualstudio.com/items?itemName=saoudrizwan.claude-dev) alongside Claude Desktop, Kiro IDE, and Codex CLI.
+
+### Quick Start with Cline VS Code
+
+```bash
+# List Cline projects only
+python3 claude-chat-manager.py --source cline-vscode
+
+# 'cline' is a convenient alias
+python3 claude-chat-manager.py --source cline
+
+# List all sources combined
+python3 claude-chat-manager.py --source all
+
+# Export a Cline project
+python3 claude-chat-manager.py --source cline-vscode "my-project" -f book -o exports/
+
+# Browse interactively
+python3 claude-chat-manager.py --source cline-vscode
+```
+
+### Configuration
+
+```bash
+# .env
+# Default source
+CHAT_SOURCE=cline-vscode   # or: cline (alias)
+
+# Override data directory (useful for VS Code forks)
+CLINE_VSCODE_DATA_DIR=/path/to/globalStorage/saoudrizwan.claude-dev
+```
+
+To read a VS Code fork (Cursor, Windsurf, VSCodium, Insiders), set `CLINE_VSCODE_DATA_DIR` to that fork's `globalStorage/saoudrizwan.claude-dev` directory.
+
+### Cline Data Directory Locations
+
+The tool auto-detects the Cline data directory based on your OS:
+
+| OS | Default Location |
+|----|------------------|
+| macOS | `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/` |
+| Windows | `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\` |
+| Linux | `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/` |
+
+### Conversation Format
+
+Cline stores each task (conversation) as a directory under `tasks/<task-id>/`:
+- `ui_messages.json` — primary source (rich UI event log with `say`/`ask` entries)
+- `api_conversation_history.json` — fallback (raw Anthropic API transcript)
+
+Tool calls, checkpoints, and lifecycle events are automatically filtered; only actual user/assistant conversation is exported.
+
+### Features with Cline VS Code
+
+- ✅ Interactive browsing with `[Cline/VSC]` source indicator
+- ✅ All export formats (pretty, markdown, book, wiki)
+- ✅ Content search across tasks
+- ✅ Batch export of projects (grouped by working directory)
+- ✅ Primary (`ui_messages.json`) / fallback (`api_conversation_history.json`) strategy
+- ✅ Sensitive data sanitization
+- ✅ Smart filtering of trivial chats
+
+## �🛠️ What's New
 
 ### v3.1.0 - Steering Content Filtering (March 2026)
 

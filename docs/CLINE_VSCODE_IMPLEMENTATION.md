@@ -35,12 +35,12 @@ both source adapters. Only the discovery + storage layers differ.
 | 2 | `src/cline_vscode_parser.py` (+ unit tests) | ✅ Done |
 | 3 | `src/cline_vscode_projects.py` (+ unit tests) | ✅ Done |
 | 4 | `src/config.py` (`CLINE_VSCODE_DATA_DIR`, validation, filter; + `TestClineConfig`) | ✅ Done |
-| 5 | `src/projects.py` wiring (+ unit tests) | ⏳ TODO |
-| 6 | `src/exporters.py` wiring (+ unit tests) | ⏳ TODO |
-| 7 | `claude-chat-manager.py` `--source` flag (+ unit tests) | ⏳ TODO |
-| 8 | `.env.example` | ⏳ TODO |
-| E2E | Integration / end-to-end tests | ⏳ TODO |
-| 12 | README.md + ARCHITECTURE.md | ⏳ TODO |
+| 5 | `src/projects.py` wiring (+ unit tests) | ✅ Done |
+| 6 | `src/exporters.py` wiring (+ unit tests) | ✅ Done |
+| 7 | `claude-chat-manager.py` `--source` flag (+ unit tests) | ✅ Done |
+| 8 | `.env.example` | ✅ Done |
+| E2E | Integration / end-to-end tests | ✅ Done |
+| 12 | README.md + ARCHITECTURE.md | ✅ Done |
 
 Each step ships its own unit tests in the same commit (see the testing convention
 in §6). Steps 1–4 + their tests landed in commit `feat(cline): add VS Code parser,
@@ -247,7 +247,7 @@ projects to filesystem folders automatically. Verify with `auto-export.py --dry-
 
 ---
 
-**Document Version:** 2.0
-**Updated:** 2026-06-17
-**Status:** Steps 1–4 + tests implemented; steps 5–11 pending.
+**Document Version:** 2.1
+**Updated:** 2026-06-18
+**Status:** All steps complete. Steps 1–12 + E2E tests implemented.
 **Format verified against:** Cline v3.89.2, VS Code 1.124.2, macOS
