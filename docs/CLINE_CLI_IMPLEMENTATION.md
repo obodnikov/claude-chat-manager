@@ -123,9 +123,16 @@ Update §3 and §5 with the verified facts before writing code.
 
 > Reuse `src/cline_messages.py` for all schema logic. Only discovery/storage is new.
 
+> **Testing convention:** unit tests ship **within** each step (same commit as the
+> code they cover), not as a separate phase — matching the VS Code source. The only
+> dedicated test phase is **Phase E2E** (integration / end-to-end). Because the
+> shared say/ask filtering and `decode_ask_text` are already covered by the
+> `cline_messages` tests, per-step tests here focus on the **SQLite adapter** and
+> **discovery/grouping**.
+
 ### Step 1 — `src/models.py`
-Add `CLINE_CLI = "cline-cli"` to `ChatSource`. Update `test_models.py`
-(`"cline-cli" in sources`, member count).
+Add `CLINE_CLI = "cline-cli"` to `ChatSource`. **Unit tests (this step):** update
+`test_models.py` (`"cline-cli" in sources`, member count).
 
 ### Step 2 — `src/cline_cli_parser.py` (NEW)
 - `ClineCliSession` dataclass (task_id, cwd, title, timestamp, model, messages, source ref).
@@ -135,6 +142,10 @@ Add `CLINE_CLI = "cline-cli"` to `ChatSource`. Update `test_models.py`
   `classify_say` / `classify_ask` / `decode_ask_text` from `cline_messages`.
 - `extract_cline_cli_messages(session) -> List[ChatMessage]` with
   `source=ChatSource.CLINE_CLI` (mirror `extract_cline_vscode_messages`).
+
+**Unit tests (this step)** — `tests/test_cline_cli_parser.py`: build a temp SQLite
+DB fixture matching the verified schema; assert rows map to user/assistant messages,
+`ask` payloads decode, tool/lifecycle rows are dropped, and `source==CLINE_CLI`.
 
 ### Step 3 — `src/cline_cli_projects.py` (NEW)
 - `ClineCliTaskInfo`, `ClineCliWorkspace` dataclasses.
@@ -147,6 +158,10 @@ Add `CLINE_CLI = "cline-cli"` to `ChatSource`. Update `test_models.py`
 > stable handle (e.g. `cline-cli://<task_id>`), and the exporter resolves it via
 > `parse_cline_cli_task`. Decide the handle format during grounding.
 
+**Unit tests (this step)** — `tests/test_cline_cli_projects.py`: with a temp DB
+fixture, assert tasks group by the cwd key into workspaces, deleted/empty tasks are
+skipped, `last_modified` is the newest task, and the session handles are well-formed.
+
 ### Step 4 — `src/config.py`
 - `CLINE_CLI_DATA_DIR` env var + `_get_default_cline_cli_dir()` (`~/.cline/data`).
 - `cline_cli_data_dir` property + `validate_cline_cli_directory()` (checks the
@@ -156,19 +171,32 @@ Add `CLINE_CLI = "cline-cli"` to `ChatSource`. Update `test_models.py`
   `CLINE_CLI` (this requires `chat_source_filter` to return a set/None — coordinate
   with `projects.py`, which currently expects a single `ChatSource` or `None`).
 
-### Steps 5–8 — `projects.py`, `exporters.py`, `claude-chat-manager.py`, `.env.example`
+**Unit tests (this step)** — extend `tests/test_config.py`: `CLINE_CLI_DATA_DIR`
+override + OS default, `validate_cline_cli_directory()`, and `--source cline-cli`
+mapping; plus the `cline` umbrella behavior once it returns both sources.
+
+### Steps 5–7 — `projects.py`, `exporters.py`, `claude-chat-manager.py`
 Mirror the VS Code wiring (see [CLINE_VSCODE_IMPLEMENTATION.md](CLINE_VSCODE_IMPLEMENTATION.md) §6),
 substituting the `cline_cli_*` modules, `ChatSource.CLINE_CLI`, `--source cline-cli`,
 and `CLINE_CLI_DATA_DIR`. In `exporters._detect_chat_source`, CLI sessions arrive
 as `cline-cli://` handles rather than file paths, so detect by that scheme.
 
-### Steps 9–10 — Tests
-`tests/test_cline_cli_parser.py`, `tests/test_cline_cli_projects.py`. Build a
-**temporary SQLite DB fixture** matching the verified schema. The schema-level
-behavior (say/ask filtering, ask decoding) is already covered by the shared
-`cline_messages` tests — focus these on the SQLite adapter and discovery/grouping.
+**Unit tests (each step)** — fold into the existing suites alongside the VS Code
+source: `test_projects.py` (CLI projects listed/grouped), `test_exporters.py`
+(handle detection + routing through `parse_cline_cli_task`), and
+`test_cli_source_flag.py` (`--source cline-cli`).
 
-### Step 11 — Docs
+### Step 8 — `.env.example`
+Add `CLINE_CLI_DATA_DIR` + the `cline-cli` filter option. (Documentation only — no unit tests.)
+
+### Phase E2E — Integration / End-to-end tests
+The only dedicated test phase (e.g. `tests/test_cline_cli_export_integration.py`):
+seed a temp SQLite DB with a couple of tasks and run a full **export** for each
+format; assert clean conversation. Verify `--source all` includes the CLI source and
+that `auto-export.py --dry-run` maps a CLI project via `workspace_path`. If a user
+ran the same project in both hosts, confirm VS Code + CLI merge into one target folder.
+
+### Step 9 — Docs
 Update `docs/ARCHITECTURE.md` (new **4.2.4 Data Layer (Cline CLI)**), `README.md`,
 and this file (flip status to implemented).
 

@@ -30,20 +30,21 @@ both source adapters. Only the discovery + storage layers differ.
 
 | Step | Area | Status |
 |------|------|--------|
-| 1 | `ChatSource.CLINE_VSCODE` enum | ✅ Done |
+| 1 | `ChatSource.CLINE_VSCODE` enum (+ `test_models`) | ✅ Done |
 | 2 | `src/cline_messages.py` (shared schema) | ✅ Done |
-| 2 | `src/cline_vscode_parser.py` | ✅ Done |
-| 3 | `src/cline_vscode_projects.py` | ✅ Done |
-| 4 | `src/config.py` (`CLINE_VSCODE_DATA_DIR`, validation, filter) | ✅ Done |
-| 9 | `tests/test_cline_vscode_parser.py` | ✅ Done |
-| 10 | `tests/test_cline_vscode_projects.py` + `TestClineConfig` | ✅ Done |
-| 5 | `src/projects.py` wiring | ⏳ TODO |
-| 6 | `src/exporters.py` wiring | ⏳ TODO |
-| 7 | `claude-chat-manager.py` `--source` flag | ⏳ TODO |
+| 2 | `src/cline_vscode_parser.py` (+ unit tests) | ✅ Done |
+| 3 | `src/cline_vscode_projects.py` (+ unit tests) | ✅ Done |
+| 4 | `src/config.py` (`CLINE_VSCODE_DATA_DIR`, validation, filter; + `TestClineConfig`) | ✅ Done |
+| 5 | `src/projects.py` wiring (+ unit tests) | ⏳ TODO |
+| 6 | `src/exporters.py` wiring (+ unit tests) | ⏳ TODO |
+| 7 | `claude-chat-manager.py` `--source` flag (+ unit tests) | ⏳ TODO |
 | 8 | `.env.example` | ⏳ TODO |
-| 11 | README.md + ARCHITECTURE.md | ⏳ TODO |
+| E2E | Integration / end-to-end tests | ⏳ TODO |
+| 12 | README.md + ARCHITECTURE.md | ⏳ TODO |
 
-Steps 1–4 + tests landed in commit `feat(cline): add VS Code parser, discovery, and config (steps 1+4)`.
+Each step ships its own unit tests in the same commit (see the testing convention
+in §6). Steps 1–4 + their tests landed in commit `feat(cline): add VS Code parser,
+discovery, and config (steps 1+4)`.
 
 ---
 
@@ -150,7 +151,13 @@ skips user turns that are empty after stripping (pure tool-result turns).
 
 ---
 
-## 6. Remaining Steps (5–11)
+## 6. Remaining Steps (5–12)
+
+> **Testing convention:** unit tests ship **within** each step (same commit as the
+> code they cover), never as a separate phase. The only dedicated test phase is
+> **Phase E2E** (integration / end-to-end). Steps 1–4 already followed this — their
+> unit tests (`test_cline_vscode_parser.py`, `test_cline_vscode_projects.py`,
+> `TestClineConfig`) landed in the same commit as the code.
 
 ### Step 5 — `src/projects.py`
 Mirror the Codex blocks. In `list_all_projects()` add a `scan_cline_vscode`
@@ -163,6 +170,11 @@ task-dir paths from `session_ids` that still exist.
 > (`get_cline_vscode_session_files` returns dirs). The exporter passes the dir to
 > `parse_cline_vscode_task`, which selects ui/api internally.
 
+**Unit tests (this step)** — extend `tests/test_projects.py`: a `CLINE_VSCODE`
+project appears in `list_all_projects()` with the right `workspace_path` and
+`session_ids`; `find_project_by_name()` matches by basename; `get_project_chat_files()`
+returns existing task dirs and skips deleted ones. Use a temp globalStorage fixture.
+
 ### Step 6 — `src/exporters.py`
 1. Import `parse_cline_vscode_task`, `extract_cline_vscode_messages`.
 2. `_detect_chat_source()`: a path whose name is `ui_messages.json` **or** a directory containing one ⇒ `ChatSource.CLINE_VSCODE` (check before the `.jsonl`/`.json` logic).
@@ -170,12 +182,21 @@ task-dir paths from `session_ids` that still exist.
 4. `_load_chat_data()`: `ChatSource.CLINE_VSCODE` branch → `session = parse_cline_vscode_task(task_dir); messages = extract_cline_vscode_messages(session)` (resolve `task_dir` from the passed path: it's the dir, or `path.parent` if a file).
 5. `export_project_chats()`: Cline file handling (`session_ids` are task dirs; or `project_path.rglob('ui_messages.json')` → `.parent`).
 
+**Unit tests (this step)** — extend `tests/test_exporters.py`: `_detect_chat_source()`
+returns `CLINE_VSCODE` for a task dir / `ui_messages.json`; `_load_chat_data()` routes a
+Cline task dir through `parse_cline_vscode_task`; `_convert_cline_vscode_to_dict()` shape
+is export-compatible. Reuse the parser test fixtures.
+
 ### Step 7 — `claude-chat-manager.py`
 - `--source` choices → add `cline-vscode` (and `cline` alias, `cline-cli` reserved for the CLI guide).
 - Source→enum mapping → `cline-vscode`/`cline` → `ChatSource.CLINE_VSCODE`.
 - Epilog examples for `--source cline-vscode`.
 
+**Unit tests (this step)** — extend `tests/test_cli_source_flag.py`: `--source cline-vscode`
+and the `cline` alias both resolve to `ChatSource.CLINE_VSCODE`; the argparse choice is accepted.
+
 ### Step 8 — `.env.example`
+(Documentation only — no unit tests.)
 ```
 # Cline (VS Code extension) data directory — globalStorage/saoudrizwan.claude-dev.
 # Point at a VS Code fork's globalStorage to read Cursor/Windsurf/VSCodium/Insiders.
@@ -185,7 +206,17 @@ task-dir paths from `session_ids` that still exist.
 # CHAT_SOURCE=claude
 ```
 
-### Step 11 — Docs
+### Phase E2E — Integration / End-to-end tests
+The only dedicated test phase. After steps 5–7 are wired, add cross-module tests
+(e.g. `tests/test_cline_vscode_export_integration.py`):
+- Build a realistic temp globalStorage (state/taskHistory.json + one or more
+  `tasks/<id>/` with ui_messages.json) and run a full **export** for each format
+  (pretty / markdown / book / wiki); assert clean conversation, no tool noise.
+- Rename `ui_messages.json` away → assert the api fallback still exports.
+- `--source all` lists Claude + Kiro + Codex + Cline VS Code together, date-sorted.
+- `auto-export.py --dry-run` maps the Cline project to a target folder via `workspace_path`.
+
+### Step 12 — Docs
 - `docs/ARCHITECTURE.md`: new **4.2.3 Data Layer (Cline VS Code)**; add `cline_messages.py`, `cline_vscode_parser.py`, `cline_vscode_projects.py`, tests; add `CLINE_VSCODE_DATA_DIR`; stability zones; multi-source diagrams `[Cline/VSC]`.
 - `README.md`: sources list + `--source cline-vscode` usage.
 - `docs/chats/` entry for this conversation.
