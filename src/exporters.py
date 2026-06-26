@@ -887,7 +887,11 @@ def export_project_chats(
             if effective_api_key:
                 try:
                     from .llm_client import OpenRouterClient
-                    llm_client = OpenRouterClient(api_key=effective_api_key)
+                    llm_client = OpenRouterClient(
+                        api_key=effective_api_key,
+                        model=config.openrouter_model,
+                        timeout=config.openrouter_timeout
+                    )
                     logger.info("Using LLM for title generation in book export")
                 except Exception as e:
                     logger.warning(f"Failed to initialize LLM client: {e}")
@@ -1325,7 +1329,11 @@ def export_single_chat(
                 if effective_api_key:
                     try:
                         from .llm_client import OpenRouterClient
-                        llm_client = OpenRouterClient(api_key=effective_api_key)
+                        llm_client = OpenRouterClient(
+                            api_key=effective_api_key,
+                            model=config.openrouter_model,
+                            timeout=config.openrouter_timeout
+                        )
                         logger.debug("Using LLM for single chat title generation")
                     except Exception as e:
                         logger.warning(f"Failed to initialize LLM client: {e}")
@@ -1416,7 +1424,11 @@ def export_project_wiki(
         llm_client = None
         if use_llm and api_key:
             try:
-                llm_client = OpenRouterClient(api_key=api_key)
+                llm_client = OpenRouterClient(
+                    api_key=api_key,
+                    model=config.openrouter_model,
+                    timeout=config.openrouter_timeout
+                )
                 logger.info("Using LLM for title generation")
             except Exception as e:
                 logger.warning(f"Failed to initialize LLM client: {e}")
