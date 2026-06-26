@@ -19,14 +19,27 @@ class TestEnvFileLoading:
         assert config is not None
         assert config.log_level in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
 
-    def test_default_values_without_env_file(self):
-        """Test that defaults work when .env file doesn't exist."""
-        from src.config import config
+    def test_default_values_without_env_file(self, monkeypatch):
+        """Test that defaults work when .env file doesn't exist.
 
-        # These should return defaults if .env is not present
-        assert config.log_level == 'INFO'  # Default
-        assert config.wiki_generate_titles == True  # Default
-        assert config.openrouter_model == 'anthropic/claude-haiku-4.5'  # Default
+        The singleton ``config`` is already populated from the real .env at
+        import time, and _load_env_file() injects those values into os.environ.
+        To truly exercise the default fallback paths we remove the relevant
+        env vars (simulating "no .env present") and read from a fresh Config().
+        """
+        from src.config import Config
+
+        # Strip any values injected by the real .env / host environment so the
+        # default fallbacks in each property take effect.
+        for var in ('CLAUDE_LOG_LEVEL', 'WIKI_GENERATE_TITLES', 'OPENROUTER_MODEL'):
+            monkeypatch.delenv(var, raising=False)
+
+        test_config = Config()
+
+        # These should return defaults when the env vars are absent
+        assert test_config.log_level == 'INFO'  # Default
+        assert test_config.wiki_generate_titles == True  # Default
+        assert test_config.openrouter_model == 'anthropic/claude-haiku-4.5'  # Default
 
     def test_env_variables_take_precedence(self):
         """Test that environment variables override .env file."""

@@ -174,3 +174,81 @@ class TestKiroConfig:
         monkeypatch.setenv('KIRO_DATA_DIR', str(kiro_file))
         config = Config()
         assert config.validate_kiro_directory() is False
+
+
+class TestClineConfig:
+    """Tests for Cline-specific configuration."""
+
+    def test_cline_data_dir_default_macos(self, monkeypatch):
+        """Test default Cline directory on macOS."""
+        monkeypatch.setattr('sys.platform', 'darwin')
+        config = Config()
+        expected = (
+            Path.home() / 'Library' / 'Application Support'
+            / 'Code' / 'User' / 'globalStorage' / 'saoudrizwan.claude-dev'
+        )
+        assert config.cline_vscode_data_dir == expected
+
+    def test_cline_data_dir_default_linux(self, monkeypatch):
+        """Test default Cline directory on Linux."""
+        monkeypatch.setattr('sys.platform', 'linux')
+        config = Config()
+        expected = (
+            Path.home() / '.config'
+            / 'Code' / 'User' / 'globalStorage' / 'saoudrizwan.claude-dev'
+        )
+        assert config.cline_vscode_data_dir == expected
+
+    def test_cline_data_dir_custom_env(self, monkeypatch):
+        """Test custom Cline directory from CLINE_VSCODE_DATA_DIR env var."""
+        custom_path = '/custom/cline/path'
+        monkeypatch.setenv('CLINE_VSCODE_DATA_DIR', custom_path)
+        config = Config()
+        assert config.cline_vscode_data_dir == Path(custom_path)
+
+    def test_chat_source_filter_cline(self, monkeypatch):
+        """Test chat source filter set to cline."""
+        monkeypatch.setenv('CHAT_SOURCE', 'cline')
+        config = Config()
+        from src.models import ChatSource
+        assert config.chat_source_filter == ChatSource.CLINE_VSCODE
+
+    def test_is_chat_source_set_when_cline(self, monkeypatch):
+        """is_chat_source_set returns True for 'cline'."""
+        monkeypatch.setenv('CHAT_SOURCE', 'cline')
+        config = Config()
+        assert config.is_chat_source_set is True
+
+    def test_validate_cline_vscode_directory_with_task_history(self, tmp_path, monkeypatch):
+        """Validation succeeds when state/taskHistory.json exists."""
+        cline_dir = tmp_path / 'cline'
+        cline_dir.mkdir()
+        state_dir = cline_dir / 'state'
+        state_dir.mkdir()
+        (state_dir / 'taskHistory.json').write_text('[]')
+        monkeypatch.setenv('CLINE_VSCODE_DATA_DIR', str(cline_dir))
+        config = Config()
+        assert config.validate_cline_vscode_directory() is True
+
+    def test_validate_cline_vscode_directory_not_exists(self, tmp_path, monkeypatch):
+        """Validation fails when directory doesn't exist."""
+        cline_dir = tmp_path / 'nonexistent'
+        monkeypatch.setenv('CLINE_VSCODE_DATA_DIR', str(cline_dir))
+        config = Config()
+        assert config.validate_cline_vscode_directory() is False
+
+    def test_validate_cline_vscode_directory_no_task_history(self, tmp_path, monkeypatch):
+        """Validation fails when taskHistory.json is missing."""
+        cline_dir = tmp_path / 'cline'
+        cline_dir.mkdir()
+        monkeypatch.setenv('CLINE_VSCODE_DATA_DIR', str(cline_dir))
+        config = Config()
+        assert config.validate_cline_vscode_directory() is False
+
+    def test_validate_cline_vscode_directory_is_file(self, tmp_path, monkeypatch):
+        """Validation fails when path is a file, not directory."""
+        cline_file = tmp_path / 'cline_file'
+        cline_file.touch()
+        monkeypatch.setenv('CLINE_VSCODE_DATA_DIR', str(cline_file))
+        config = Config()
+        assert config.validate_cline_vscode_directory() is False

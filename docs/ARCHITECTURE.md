@@ -274,6 +274,67 @@ Each rollout file contains:
 
 Sessions sharing the same `cwd` are grouped into one logical project.
 
+### 4.2.3 Data Layer (Cline VS Code)
+**Modules:** `cline_messages.py`, `cline_vscode_parser.py`, `cline_vscode_projects.py`
+
+**Responsibilities:**
+- Cline VS Code task directory parsing (per-task JSON files)
+- Discovery via `state/taskHistory.json` index
+- Project grouping by `cwdOnTaskInitialization` (workspace path)
+- Primary/fallback conversation source strategy:
+  - Primary: `ui_messages.json` (rich UI event log)
+  - Fallback: `api_conversation_history.json` (raw Anthropic API transcript)
+- Host-agnostic `say`/`ask` schema classification (shared with future Cline CLI source)
+- Content normalization: drops tool/lifecycle noise, decodes JSON-encoded `ask` text
+
+**Key Data Classes:**
+- `ClineVscodeSession` — Parsed task/session with messages and metadata
+- `ClineVscodeTaskInfo` — Lightweight task info for discovery
+- `ClineVscodeWorkspace` — Tasks grouped by `cwd` (one workspace = one project)
+
+**Key Functions:**
+- `parse_cline_vscode_task(task_dir)` — Primary/fallback orchestrator; returns `ClineVscodeSession`
+- `extract_cline_vscode_messages(session)` — Convert to `List[ChatMessage]` with `source=CLINE_VSCODE`
+- `discover_cline_vscode_workspaces(cline_data_dir)` — Read `taskHistory.json`, group by cwd
+- `get_cline_vscode_session_files(workspace)` — Return task dir paths sorted newest-first
+- `classify_say(subtype)` / `classify_ask(subtype)` — Role classification (in `cline_messages.py`)
+- `decode_ask_text(subtype, raw)` — Decode JSON-encoded ask payloads
+- `normalize_cline_content(content)` — Normalize content to plain text
+
+**Cline Data Structure:**
+
+```
+globalStorage/saoudrizwan.claude-dev/
+├── state/
+│   └── taskHistory.json          # Discovery index (array of task summaries)
+└── tasks/
+    └── <epoch-ms-id>/            # One directory per task = one conversation
+        ├── ui_messages.json      # PRIMARY: rich UI event log (say/ask entries)
+        ├── api_conversation_history.json  # FALLBACK: Anthropic API transcript
+        └── task_metadata.json    # Optional: model, cline version, env
+```
+
+**Primary/Fallback Strategy:**
+
+1. Parse `ui_messages.json` using `say`/`ask` classification — keep only user/assistant subtypes
+2. If missing, unreadable, or empty → fall back to `api_conversation_history.json`
+3. Fallback strips `<task>` wrappers (unwrap) and `<environment_details>` (drop), skips pure tool-result turns
+
+**Default data directory by OS** (`CLINE_VSCODE_DATA_DIR` overrides):
+
+| OS | Default |
+|----|---------|
+| macOS | `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/` |
+| Windows | `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\` |
+| Linux | `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/` |
+
+Override via `CLINE_VSCODE_DATA_DIR` to read VS Code forks (Cursor, Windsurf, VSCodium, Insiders).
+
+**Stability zones:**
+- `cline_messages.py` — shared host-agnostic schema; stable, reused by future Cline CLI source
+- `cline_vscode_parser.py` — VS Code file format; stable once format is verified
+- `cline_vscode_projects.py` — discovery; depends only on `taskHistory.json` structure
+
 ### 4.3 Export Engine
 **Modules:** `exporters.py`, `formatters.py`, `filters.py`
 

@@ -7,6 +7,7 @@ pretty terminal output, markdown, book format, and wiki format.
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+import json
 import logging
 import os
 
@@ -24,28 +25,39 @@ from .kiro_parser import (
     build_execution_log_index,
     build_full_session_from_executions
 )
+from .cline_vscode_parser import parse_cline_vscode_task, extract_cline_vscode_messages
 from .models import ChatSource, ChatMessage
 
 logger = logging.getLogger(__name__)
 
 
 def _detect_chat_source(file_path: Path) -> ChatSource:
-    """Detect whether a chat file is from Claude Desktop, Kiro IDE, or Codex CLI.
-    
-    Uses both file extension and content structure to determine source.
-    For .jsonl files, checks if first line is a Codex session_meta entry.
-    
+    """Detect whether a chat file is from Claude Desktop, Kiro IDE, Codex CLI, or Cline VS Code.
+
+    Checks Cline first (directory or ui/api file), then uses file extension and
+    content structure to distinguish Claude Desktop, Codex, and Kiro.
+
     Args:
-        file_path: Path to the chat file
-        
+        file_path: Path to the chat file or task directory.
+
     Returns:
         ChatSource enum value
-        
+
     Raises:
         ExportError: If file format cannot be determined
     """
-    import json
-    
+    # ── Cline VS Code detection (must run before extension checks) ──────────
+    # A task directory containing ui_messages.json or api_conversation_history.json
+    if file_path.is_dir():
+        if (file_path / "ui_messages.json").exists() or \
+                (file_path / "api_conversation_history.json").exists():
+            return ChatSource.CLINE_VSCODE
+
+    # A ui_messages.json or api_conversation_history.json file itself
+    if file_path.name in ("ui_messages.json", "api_conversation_history.json"):
+        return ChatSource.CLINE_VSCODE
+
+    # ── Extension-based detection ────────────────────────────────────────────
     # First check: file extension
     if file_path.suffix == '.jsonl':
         # Could be Claude Desktop or Codex — check first line content
@@ -61,7 +73,7 @@ def _detect_chat_source(file_path: Path) -> ChatSource:
             pass
         # Default for .jsonl: Claude Desktop
         return ChatSource.CLAUDE_DESKTOP
-    
+
     if file_path.suffix in ('.chat', '.json'):
         # Second check: inspect file content structure
         try:
@@ -70,26 +82,26 @@ def _detect_chat_source(file_path: Path) -> ChatSource:
                 first_line = f.readline().strip()
                 if not first_line:
                     raise ExportError(f"Empty file: {file_path}")
-                
+
                 data = json.loads(first_line)
-                
+
                 # Kiro files have 'chat' array and 'executionId' at top level
                 if isinstance(data, dict) and 'chat' in data:
                     return ChatSource.KIRO_IDE
-                
+
                 # Claude JSONL has 'message' or 'type' at top level
                 if isinstance(data, dict) and ('message' in data or 'type' in data):
                     return ChatSource.CLAUDE_DESKTOP
-                
+
         except json.JSONDecodeError:
             # If JSON parsing fails, fall back to extension
             pass
         except Exception as e:
             logger.warning(f"Error detecting source for {file_path}: {e}")
-        
+
         # Default for .chat/.json files
         return ChatSource.KIRO_IDE
-    
+
     # Default fallback
     return ChatSource.CLAUDE_DESKTOP
 
@@ -140,6 +152,37 @@ def _convert_codex_to_dict(messages: List[ChatMessage]) -> List[Dict[str, Any]]:
             'timestamp': msg.timestamp,
             'source': ChatSource.CODEX
         }
+        if msg.execution_id:
+            entry['execution_id'] = msg.execution_id
+        chat_data.append(entry)
+    return chat_data
+
+
+def _convert_cline_vscode_to_dict(messages: List[ChatMessage]) -> List[Dict[str, Any]]:
+    """Convert Cline VS Code ChatMessage objects to dict format for compatibility.
+
+    Mirrors the shape produced by _convert_codex_to_dict() and
+    _convert_kiro_to_dict() so that all downstream export functions
+    (export_chat_markdown, export_chat_book, etc.) can consume Cline
+    messages without modification.
+
+    Args:
+        messages: List of ChatMessage objects from extract_cline_vscode_messages()
+
+    Returns:
+        List of message dicts compatible with export functions
+    """
+    chat_data = []
+    for msg in messages:
+        entry: Dict[str, Any] = {
+            'message': {
+                'role': msg.role,
+                'content': msg.content,
+            },
+            'timestamp': msg.timestamp,
+            'source': ChatSource.CLINE_VSCODE,
+        }
+        # task_id is stored in execution_id by extract_cline_vscode_messages
         if msg.execution_id:
             entry['execution_id'] = msg.execution_id
         chat_data.append(entry)
@@ -206,9 +249,18 @@ def _load_chat_data(
             chat_data = _convert_codex_to_dict(messages)
             return chat_data, ChatSource.CODEX, errors
 
+        elif source == ChatSource.CLINE_VSCODE:
+            # Parse Cline VS Code task directory.
+            # file_path may be the task directory itself, or a file
+            # (ui_messages.json / api_conversation_history.json) inside it.
+            task_dir = file_path if file_path.is_dir() else file_path.parent
+            session = parse_cline_vscode_task(task_dir)
+            messages = extract_cline_vscode_messages(session)
+            chat_data = _convert_cline_vscode_to_dict(messages)
+            return chat_data, ChatSource.CLINE_VSCODE, errors
+
         elif source == ChatSource.KIRO_IDE:
             # Parse Kiro chat file to get session data
-            import json
             with open(file_path, 'r', encoding='utf-8') as f:
                 session_data = json.load(f)
             
@@ -735,7 +787,6 @@ def export_chat_to_file(
         elif format_type == 'pretty':
             content = export_chat_pretty(chat_data, verbose=verbose)
         elif format_type == 'raw':
-            import json
             content = '\n'.join(json.dumps(entry, indent=2) for entry in chat_data)
         else:
             raise ExportError(f"Unknown format type: {format_type}")
@@ -793,6 +844,25 @@ def export_project_chats(
             chat_files = list(project_path.rglob('rollout-*.jsonl'))
         elif source == ChatSource.KIRO_IDE:
             chat_files = [f for f in project_path.glob('*.json') if f.name != 'sessions.json']
+        elif source == ChatSource.CLINE_VSCODE:
+            # project_path is the tasks/ directory; each subdirectory is a task.
+            # Resolve task dirs safely (same confinement logic as get_project_chat_files).
+            tasks_root = project_path.resolve()
+            chat_files = []
+            if project_path.exists() and project_path.is_dir():
+                for task_dir in project_path.iterdir():
+                    if not task_dir.is_dir():
+                        continue
+                    # Confinement check
+                    try:
+                        task_dir.resolve().relative_to(tasks_root)
+                    except ValueError:
+                        logger.warning(f"Skipping Cline task dir outside tasks root: {task_dir}")
+                        continue
+                    # Only include dirs that contain at least one conversation file
+                    if (task_dir / "ui_messages.json").exists() or \
+                            (task_dir / "api_conversation_history.json").exists():
+                        chat_files.append(task_dir)
         else:
             chat_files = list(project_path.glob('*.jsonl'))
         
@@ -817,7 +887,11 @@ def export_project_chats(
             if effective_api_key:
                 try:
                     from .llm_client import OpenRouterClient
-                    llm_client = OpenRouterClient(api_key=effective_api_key)
+                    llm_client = OpenRouterClient(
+                        api_key=effective_api_key,
+                        model=config.openrouter_model,
+                        timeout=config.openrouter_timeout
+                    )
                     logger.info("Using LLM for title generation in book export")
                 except Exception as e:
                     logger.warning(f"Failed to initialize LLM client: {e}")
@@ -1255,7 +1329,11 @@ def export_single_chat(
                 if effective_api_key:
                     try:
                         from .llm_client import OpenRouterClient
-                        llm_client = OpenRouterClient(api_key=effective_api_key)
+                        llm_client = OpenRouterClient(
+                            api_key=effective_api_key,
+                            model=config.openrouter_model,
+                            timeout=config.openrouter_timeout
+                        )
                         logger.debug("Using LLM for single chat title generation")
                     except Exception as e:
                         logger.warning(f"Failed to initialize LLM client: {e}")
@@ -1346,7 +1424,11 @@ def export_project_wiki(
         llm_client = None
         if use_llm and api_key:
             try:
-                llm_client = OpenRouterClient(api_key=api_key)
+                llm_client = OpenRouterClient(
+                    api_key=api_key,
+                    model=config.openrouter_model,
+                    timeout=config.openrouter_timeout
+                )
                 logger.info("Using LLM for title generation")
             except Exception as e:
                 logger.warning(f"Failed to initialize LLM client: {e}")

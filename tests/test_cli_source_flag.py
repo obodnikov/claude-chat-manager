@@ -549,5 +549,238 @@ class TestFindProjectByName:
                     assert result.workspace_path == '/path/to/kiro/project'
 
 
+# ============================================================================
+# Step 7 — Cline VS Code --source flag tests
+# ============================================================================
+
+class TestClineVscodeSourceFlag:
+    """Tests for --source cline-vscode and --source cline (alias) in the CLI.
+
+    Mapping tests use the *production* parse_source_filter() function from
+    src/cli_utils.py — the same function called by claude-chat-manager.py —
+    so a regression in the real mapping will cause these tests to fail.
+
+    All symbols used (Path, MagicMock, patch, ChatSource, pytest) are imported
+    at module scope so this class can be moved independently without NameErrors.
+    """
+
+    # ── argparse acceptance ──────────────────────────────────────────────────
+
+    def _build_parser(self):
+        """Return a minimal argparse parser matching the --source argument in main()."""
+        import argparse
+        from src.cli_utils import SOURCE_CHOICES
+        p = argparse.ArgumentParser()
+        p.add_argument('--source', choices=list(SOURCE_CHOICES), default=None)
+        return p
+
+    def test_source_cline_vscode_accepted(self):
+        """--source cline-vscode is a valid argparse choice."""
+        args = self._build_parser().parse_args(['--source', 'cline-vscode'])
+        assert args.source == 'cline-vscode'
+
+    def test_source_cline_alias_accepted(self):
+        """--source cline (alias) is a valid argparse choice."""
+        args = self._build_parser().parse_args(['--source', 'cline'])
+        assert args.source == 'cline'
+
+    def test_source_cline_vscode_not_rejected(self):
+        """--source cline-vscode does not raise SystemExit (invalid choice)."""
+        try:
+            self._build_parser().parse_args(['--source', 'cline-vscode'])
+        except SystemExit:
+            pytest.fail('--source cline-vscode raised SystemExit (invalid choice)')
+
+    def test_source_cline_alias_not_rejected(self):
+        """--source cline does not raise SystemExit (invalid choice)."""
+        try:
+            self._build_parser().parse_args(['--source', 'cline'])
+        except SystemExit:
+            pytest.fail('--source cline raised SystemExit (invalid choice)')
+
+    # ── enum mapping — uses production parse_source_filter() ─────────────────
+
+    def test_cline_vscode_maps_to_cline_vscode_enum(self):
+        """parse_source_filter('cline-vscode') → ChatSource.CLINE_VSCODE."""
+        from src.cli_utils import parse_source_filter
+        assert parse_source_filter('cline-vscode') == ChatSource.CLINE_VSCODE
+
+    def test_cline_alias_maps_to_cline_vscode_enum(self):
+        """parse_source_filter('cline') → ChatSource.CLINE_VSCODE."""
+        from src.cli_utils import parse_source_filter
+        assert parse_source_filter('cline') == ChatSource.CLINE_VSCODE
+
+    # ── regression: existing source values unchanged ─────────────────────────
+
+    def test_claude_still_maps_to_claude_desktop(self):
+        from src.cli_utils import parse_source_filter
+        assert parse_source_filter('claude') == ChatSource.CLAUDE_DESKTOP
+
+    def test_kiro_still_maps_to_kiro_ide(self):
+        from src.cli_utils import parse_source_filter
+        assert parse_source_filter('kiro') == ChatSource.KIRO_IDE
+
+    def test_codex_still_maps_to_codex(self):
+        from src.cli_utils import parse_source_filter
+        assert parse_source_filter('codex') == ChatSource.CODEX
+
+    def test_all_still_maps_to_none(self):
+        from src.cli_utils import parse_source_filter
+        assert parse_source_filter('all') is None
+
+    def test_none_maps_to_none(self):
+        """parse_source_filter(None) returns None (all sources / auto-detect)."""
+        from src.cli_utils import parse_source_filter
+        assert parse_source_filter(None) is None
+
+    # ── CRITICAL regression guard: export_project_chats accepts source kwarg ─
+
+    def test_export_project_chats_accepts_source_kwarg(self):
+        """export_project_chats() must accept source= without raising TypeError.
+
+        Uses signature inspection only — avoids coupling to filesystem layout,
+        format behaviour, or exporter internals. An explicit 'source' param OR
+        **kwargs means the CLI call source=project_info.source will not crash.
+        """
+        import inspect
+        from src.exporters import export_project_chats
+
+        sig = inspect.signature(export_project_chats)
+        has_explicit_source = 'source' in sig.parameters
+        has_var_kwargs = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD
+            for p in sig.parameters.values()
+        )
+        assert has_explicit_source or has_var_kwargs, (
+            "export_project_chats() has neither an explicit 'source' parameter "
+            "nor **kwargs — calling it with source=... will raise TypeError."
+        )
+
+    # ── end-to-end: list_all_projects respects CLINE_VSCODE filter ───────────
+
+    def test_list_all_projects_cline_vscode_filter(self):
+        """list_all_projects(CLINE_VSCODE) returns only Cline VS Code projects.
+
+        The config mock explicitly disables all other sources (Kiro, Codex, Claude)
+        so MagicMock default truthiness cannot accidentally trigger them.
+        Claude's directory is a non-existent path AND we patch Path.exists to
+        return False for it, so the Claude enumeration branch is skipped reliably.
+        """
+        import json
+        from tempfile import TemporaryDirectory
+        from src.projects import list_all_projects
+
+        with TemporaryDirectory() as tmpdir:
+            cline_dir = Path(tmpdir)
+            # Minimal globalStorage structure
+            state_dir = cline_dir / "state"
+            state_dir.mkdir()
+            tasks_dir = cline_dir / "tasks"
+            tasks_dir.mkdir()
+            task_dir = tasks_dir / "1781697826685"
+            task_dir.mkdir()
+            (task_dir / "ui_messages.json").write_text(
+                json.dumps([{"ts": 1_700_000_000_000, "type": "say",
+                             "say": "task", "text": "Hello"}]),
+                encoding="utf-8",
+            )
+            (state_dir / "taskHistory.json").write_text(
+                json.dumps([{
+                    "id": "1781697826685",
+                    "ts": 1_700_000_000_000,
+                    "task": "Hello",
+                    "cwdOnTaskInitialization": "/home/user/proj",
+                    "modelId": "claude-opus-4.6",
+                }]),
+                encoding="utf-8",
+            )
+
+            cfg_mock = MagicMock()
+            # ── Cline: valid and pointing at our temp dir ──
+            cfg_mock.cline_vscode_data_dir = cline_dir
+            cfg_mock.validate_cline_vscode_directory.return_value = True
+            # ── All other sources: ALL gating methods explicitly disabled ────
+            # MagicMock defaults to truthy — pin each to False so no branch
+            # can accidentally execute due to MagicMock default truthiness.
+            cfg_mock.validate_kiro_directory.return_value = False
+            cfg_mock.validate_codex_directory.return_value = False
+            cfg_mock.validate_claude_directory.return_value = False
+            # Claude projects_dir points at an existing but empty subdirectory
+            # so the iterdir() loop produces nothing — no Path.exists patch needed.
+            no_claude = cline_dir / "_empty_claude_dir"
+            no_claude.mkdir()
+            cfg_mock.claude_projects_dir = no_claude
+
+            with patch('src.projects.config', cfg_mock):
+                projects = list_all_projects(ChatSource.CLINE_VSCODE)
+
+        assert len(projects) == 1
+        assert projects[0].source == ChatSource.CLINE_VSCODE
+        assert projects[0].name == "proj"
+
+    # ── unknown value rejected loudly ────────────────────────────────────────
+
+    def test_unknown_source_raises_value_error(self):
+        """parse_source_filter raises ValueError for unrecognised non-None values."""
+        from src.cli_utils import parse_source_filter
+        with pytest.raises(ValueError, match="Unknown source value"):
+            parse_source_filter('typo-source')
+
+    # ── CHAT_SOURCE env var supports cline / cline-vscode ────────────────────
+
+    def test_chat_source_env_cline_vscode(self, monkeypatch):
+        """CHAT_SOURCE=cline-vscode is handled by config.chat_source_filter."""
+        from src.config import Config
+        monkeypatch.setenv('CHAT_SOURCE', 'cline-vscode')
+        cfg = Config()
+        assert cfg.chat_source_filter == ChatSource.CLINE_VSCODE
+
+    def test_chat_source_env_cline_alias(self, monkeypatch):
+        """CHAT_SOURCE=cline (alias) is handled by config.chat_source_filter."""
+        from src.config import Config
+        monkeypatch.setenv('CHAT_SOURCE', 'cline')
+        cfg = Config()
+        assert cfg.chat_source_filter == ChatSource.CLINE_VSCODE
+
+    def test_chat_source_env_overrides_auto_detect(self, monkeypatch):
+        """When CHAT_SOURCE=cline-vscode is set, is_chat_source_set returns True.
+
+        This validates the documented precedence: CHAT_SOURCE env overrides
+        auto-detect in claude-chat-manager.py's 'if not source_explicit' branch.
+        """
+        from src.config import Config
+        monkeypatch.setenv('CHAT_SOURCE', 'cline-vscode')
+        cfg = Config()
+        assert cfg.is_chat_source_set is True
+        assert cfg.chat_source_filter == ChatSource.CLINE_VSCODE
+
+    def test_chat_source_env_not_set_returns_none(self, monkeypatch):
+        """When CHAT_SOURCE is not set, chat_source_filter returns None (auto-detect)."""
+        from src.config import Config
+        monkeypatch.delenv('CHAT_SOURCE', raising=False)
+        cfg = Config()
+        assert cfg.is_chat_source_set is False
+        assert cfg.chat_source_filter is None
+
+    # ── parse_source_filter normalisation (MEDIUM: whitespace / empty) ───────
+
+    def test_empty_string_treated_as_none(self):
+        """parse_source_filter('') returns None (unset / all sources)."""
+        from src.cli_utils import parse_source_filter
+        assert parse_source_filter('') is None
+
+    def test_whitespace_only_treated_as_none(self):
+        """parse_source_filter('  ') returns None (whitespace stripped → empty)."""
+        from src.cli_utils import parse_source_filter
+        assert parse_source_filter('  ') is None
+
+    def test_mixed_case_accepted(self):
+        """parse_source_filter is case-insensitive for known values."""
+        from src.cli_utils import parse_source_filter
+        assert parse_source_filter('CLINE-VSCODE') == ChatSource.CLINE_VSCODE
+        assert parse_source_filter('Cline') == ChatSource.CLINE_VSCODE
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
