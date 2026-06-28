@@ -10,7 +10,7 @@ from .models import ChatSource
 
 
 # Ordered tuple for argparse choices= — single canonical source of truth.
-SOURCE_CHOICES: tuple[str, ...] = ('claude', 'kiro', 'codex', 'cline-vscode', 'cline', 'all')
+SOURCE_CHOICES: tuple[str, ...] = ('claude', 'kiro', 'codex', 'cline-vscode', 'cline', 'pi', 'all')
 
 # Derived set for O(1) membership tests (env var validation, is_chat_source_set).
 VALID_SOURCE_VALUES: frozenset[str] = frozenset(SOURCE_CHOICES)
@@ -48,6 +48,8 @@ def parse_source_filter(source_str: Optional[str]) -> Optional[ChatSource]:
     if normalised in ('cline-vscode', 'cline'):
         # 'cline' is the back-compat alias for the VS Code extension source.
         return ChatSource.CLINE_VSCODE
+    if normalised == 'pi':
+        return ChatSource.PI
     if normalised == 'all':
         return None  # None means all sources / auto-detect
     # Unknown non-empty value — reject loudly.

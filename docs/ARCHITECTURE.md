@@ -93,6 +93,8 @@ claude-chat-manager/
 │   ├── kiro_projects.py        # Kiro workspace/session discovery (~250 lines)
 │   ├── codex_parser.py         # Codex CLI JSONL rollout parsing (~200 lines)
 │   ├── codex_projects.py       # Codex project discovery by cwd (~150 lines)
+│   ├── pi_parser.py            # Pi coding agent session JSONL parsing (~300 lines)
+│   ├── pi_projects.py          # Pi project discovery by cwd (~280 lines)
 │   ├── llm_client.py           # OpenRouter API client (~150 lines)
 │   ├── models.py               # Data classes (ProjectInfo, ChatMessage, ChatSource) (~100 lines)
 │   ├── parser.py               # JSONL file parsing (~90 lines)
@@ -120,6 +122,8 @@ claude-chat-manager/
 │   ├── test_kiro_properties.py     # Kiro property-based tests
 │   ├── test_codex_parser.py        # Codex parser unit tests
 │   ├── test_codex_projects.py      # Codex projects unit tests
+│   ├── test_pi_parser.py           # Pi parser unit tests
+│   ├── test_pi_projects.py         # Pi projects unit tests
 │   ├── test_llm_client.py
 │   ├── test_models.py              # Model tests including ChatSource
 │   ├── test_sanitizer.py
@@ -135,6 +139,7 @@ claude-chat-manager/
 │   ├── SANITIZATION_SPEC.md    # Technical sanitization details
 │   ├── BOOK_MODE_ENHANCEMENTS.md  # Book export features
 │   ├── CODEX_IMPLEMENTATION.md # Codex CLI implementation guide
+│   ├── PI_IMPLEMENTATION.md    # Pi coding agent implementation guide
 │   └── chats/                  # Conversation history (implementation context)
 │
 ├── .env.example                # Configuration template
@@ -156,6 +161,7 @@ claude-chat-manager/
   - macOS: `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/workspace-sessions/`
   - Linux: `~/.config/Kiro/User/globalStorage/kiro.kiroagent/workspace-sessions/`
 - **Codex data source:** `~/.codex/sessions/` (configurable via `CODEX_DATA_DIR` or `CODEX_HOME`)
+- **Pi data source:** `~/.pi/agent/sessions/` (configurable via `PI_DATA_DIR`)
 - **Config loading:** `.env` file in project root (loaded by `src/config.py`)
 - **Logs:** `logs/claude-chat-manager.log`
 
@@ -334,6 +340,50 @@ Override via `CLINE_VSCODE_DATA_DIR` to read VS Code forks (Cursor, Windsurf, VS
 - `cline_messages.py` — shared host-agnostic schema; stable, reused by future Cline CLI source
 - `cline_vscode_parser.py` — VS Code file format; stable once format is verified
 - `cline_vscode_projects.py` — discovery; depends only on `taskHistory.json` structure
+
+### 4.2.4 Data Layer (Pi Coding Agent)
+**Modules:** `pi_parser.py`, `pi_projects.py`
+
+**Responsibilities:**
+- Pi JSONL session file parsing (header line + message entries)
+- Project discovery by scanning `~/.pi/agent/sessions/` recursively
+- Session grouping by `cwd` (read from the session header)
+- Content normalization from pi's typed content blocks
+- Session metadata extraction (uuid, cwd, version, timestamp)
+
+**Key Data Classes:**
+- `PiSession` — Parsed session with header metadata and message entries
+- `PiSessionInfo` — Lightweight session info for discovery
+- `PiWorkspace` — Sessions grouped by `cwd` (one workspace = one project)
+
+**Key Functions:**
+- `parse_pi_session_meta(file_path)` — Read only line 1 (the session header) for fast discovery
+- `parse_pi_session_file(file_path)` — Stream the file into a `PiSession`
+- `extract_pi_messages(session)` — Convert to `List[ChatMessage]` with `source=PI`
+- `normalize_pi_content(content)` — Join `text` blocks; drop `thinking`/`toolCall`/`image`
+- `discover_pi_workspaces(pi_data_dir)` — Scan sessions, group by cwd (process-cached)
+- `get_pi_session_files(workspace)` — Return session file paths sorted newest-first
+
+**Pi Data Structure:**
+
+```
+~/.pi/agent/sessions/
+├── --<path-with-dashes>--/
+│   └── <timestamp>_<uuid>.jsonl
+└── .wingman-titles.json        # Sidecar (owned by sqowe-wingman); not a session file
+```
+
+Each session file contains:
+1. First line: `type:"session"` header with `id` (uuid), `cwd`, `version`, `timestamp`
+2. Subsequent lines: `type:"message"` entries (and other lifecycle types, which are skipped)
+
+The directory slug encodes the working directory, but we do **not** parse it — `cwd` is
+read from the header (more robust). Sessions sharing the same `cwd` are grouped into one
+logical project. The `*.jsonl` discovery glob naturally excludes `.wingman-titles.json`.
+
+**Stability zones:**
+- `pi_parser.py` — pi session JSONL format; stable once format is verified (v0.80.2)
+- `pi_projects.py` — discovery by cwd grouping; process-scoped cache for repeat scans
 
 ### 4.3 Export Engine
 **Modules:** `exporters.py`, `formatters.py`, `filters.py`
@@ -587,6 +637,9 @@ WIKI_GENERATE_TITLES = os.getenv('WIKI_GENERATE_TITLES') or true
 - `CODEX_DATA_DIR` - Custom Codex data directory (default: `~/.codex`)
 - `CODEX_HOME` - Alternative Codex home directory (standard Codex env var)
 
+**Pi Coding Agent Settings:**
+- `PI_DATA_DIR` - Custom pi data directory (default: `~/.pi/agent`; sessions read from `<dir>/sessions/`)
+
 **LLM Integration:**
 - `OPENROUTER_API_KEY` - API key for title generation
 - `OPENROUTER_MODEL` - Model to use (default: `anthropic/claude-haiku-4.5`)
@@ -642,6 +695,10 @@ WIKI_GENERATE_TITLES = os.getenv('WIKI_GENERATE_TITLES') or true
 **Codex Data Layer:**
 - `codex_parser.py` - Codex JSONL rollout parsing (34 tests passing)
 - `codex_projects.py` - Project discovery by cwd grouping (10 tests passing)
+
+**Pi Data Layer:**
+- `pi_parser.py` - Pi session JSONL parsing (header + message entries)
+- `pi_projects.py` - Project discovery by cwd grouping (process-cached)
 
 **Formatting:**
 - `formatters.py` - Message formatting with structured content support (mature)
@@ -897,7 +954,7 @@ c) Refactor existing code to make room?"
 ---
 
 
-**Document Version:** 1.4  
-**Last Updated:** 2026-04-24  
-**Total Lines:** ~520  
-**Status:** ✅ Complete (Claude Desktop, Kiro IDE, Codex CLI, Auto-Export pipeline)
+**Document Version:** 1.5  
+**Last Updated:** 2026-06-28  
+**Total Lines:** ~580  
+**Status:** ✅ Complete (Claude Desktop, Kiro IDE, Codex CLI, Cline VS Code, Pi Coding Agent, Auto-Export pipeline)

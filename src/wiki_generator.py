@@ -255,7 +255,33 @@ class WikiGenerator:
                 # Generate title if not cached
                 if not title:
                     if use_llm_titles and self.llm_client:
-                        title = self._generate_title_with_llm(chat_data)
+                        # Detect pi session for optional wingman title sync (Feature B).
+                        _pi_session_id: Optional[str] = None
+                        _pi_msg_count: int = 0
+                        if config.pi_write_wingman_titles:
+                            try:
+                                from .pi_parser import parse_pi_session_meta
+                                from .parser import count_pi_messages_in_file
+                                from .exceptions import InvalidChatFileError, ChatFileNotFoundError
+                                meta = parse_pi_session_meta(chat_file)
+                                if meta.get('type') == 'session':
+                                    _pi_session_id = meta.get('id')
+                                    # Use raw file message count (not filtered
+                                    # chat_data) so wingman staleness logic
+                                    # matches the actual session file.
+                                    _pi_msg_count = count_pi_messages_in_file(chat_file)
+                            except (InvalidChatFileError, ChatFileNotFoundError, OSError):
+                                pass  # Not a pi file or unreadable — not an error
+                            except Exception as _meta_exc:
+                                logger.debug(
+                                    f"Unexpected error reading pi meta from "
+                                    f"{chat_file.name}: {_meta_exc}"
+                                )
+                        title = self._generate_title_with_llm(
+                            chat_data,
+                            pi_session_id=_pi_session_id,
+                            pi_msg_count=_pi_msg_count,
+                        )
                     else:
                         title = self._generate_fallback_title(chat_data, chat_file)
                     titles_generated += 1
@@ -296,11 +322,22 @@ class WikiGenerator:
         logger.info(f"Wiki generated successfully with {len(chat_sections)} sections")
         return wiki, stats
 
-    def _generate_title_with_llm(self, chat_data: List[Dict[str, Any]]) -> str:
+    def _generate_title_with_llm(
+        self,
+        chat_data: List[Dict[str, Any]],
+        pi_session_id: Optional[str] = None,
+        pi_msg_count: int = 0,
+    ) -> str:
         """Generate title using LLM.
+
+        When ``pi_session_id`` is supplied and ``config.pi_write_wingman_titles``
+        is enabled, the raw generated title is also written to the wingman
+        title index before being returned.
 
         Args:
             chat_data: Parsed chat data.
+            pi_session_id: Pi session UUID for optional wingman title sync.
+            pi_msg_count: Message count for wingman staleness tracking.
 
         Returns:
             Generated title or fallback.
@@ -317,6 +354,18 @@ class WikiGenerator:
             title = self.llm_client.generate_chat_title(excerpt, max_words=10)
 
             if title:
+                # Feature B — wingman title sync (pi sessions only, opt-in)
+                if pi_session_id and config.pi_write_wingman_titles:
+                    from .pi_title_index import sync_wingman_title
+                    _model = getattr(self.llm_client, 'model', None) or config.openrouter_model
+                    sync_wingman_title(
+                        config.pi_data_dir,
+                        pi_session_id,
+                        title,
+                        _model,
+                        pi_msg_count,
+                        context="wiki",
+                    )
                 return title
             else:
                 logger.warning("LLM title generation failed, using fallback")

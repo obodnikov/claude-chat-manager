@@ -106,6 +106,44 @@ def count_messages_in_file(file_path: Path) -> int:
         logger.error(f"Error counting messages in {file_path}: {e}")
         return 0
 
+
+def count_pi_messages_in_file(file_path: Path) -> int:
+    """Count user and assistant message entries in a pi session JSONL file.
+
+    Only counts lines whose ``type`` is ``"message"`` and whose nested
+    ``message.role`` is ``"user"`` or ``"assistant"``, matching the export
+    filtering logic in ``pi_parser.extract_pi_messages``.
+
+    Args:
+        file_path: Path to the pi session JSONL file.
+
+    Returns:
+        Number of conversation messages (user + assistant only).
+    """
+    count = 0
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    if (
+                        isinstance(data, dict)
+                        and data.get('type') == 'message'
+                        and isinstance(data.get('message'), dict)
+                        and data['message'].get('role') in ('user', 'assistant')
+                    ):
+                        count += 1
+                except (json.JSONDecodeError, KeyError):
+                    continue
+    except Exception as e:
+        logger.error(f"Error counting pi messages in {file_path}: {e}")
+        return 0
+    return count
+
+
 def count_codex_messages_in_file(file_path: Path) -> int:
     """Count user and assistant messages in a Codex rollout JSONL file.
 

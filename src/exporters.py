@@ -66,6 +66,15 @@ def _detect_chat_source(file_path: Path) -> ChatSource:
                 first_line = f.readline().strip()
                 if first_line:
                     data = json.loads(first_line)
+                    # Pi session files start with type="session".  Require at
+                    # least one additional pi header field (id, version, cwd, or
+                    # timestamp) to reduce false-positives on hypothetical other
+                    # "session" typed formats.
+                    _PI_HEADER_FIELDS = frozenset({"id", "version", "cwd", "timestamp"})
+                    if isinstance(data, dict) and data.get('type') == 'session' and (
+                        _PI_HEADER_FIELDS & data.keys()
+                    ):
+                        return ChatSource.PI
                     # Codex rollout files start with session_meta
                     if isinstance(data, dict) and data.get('type') == 'session_meta':
                         return ChatSource.CODEX
@@ -189,6 +198,35 @@ def _convert_cline_vscode_to_dict(messages: List[ChatMessage]) -> List[Dict[str,
     return chat_data
 
 
+def _convert_pi_to_dict(messages: List[ChatMessage]) -> List[Dict[str, Any]]:
+    """Convert pi ChatMessage objects to dict format for compatibility.
+
+    Mirrors the shape produced by _convert_codex_to_dict() so that all
+    downstream export functions can consume pi messages without modification.
+
+    Args:
+        messages: List of ChatMessage objects from extract_pi_messages().
+
+    Returns:
+        List of message dicts compatible with export functions.
+    """
+    chat_data = []
+    for msg in messages:
+        entry: Dict[str, Any] = {
+            'message': {
+                'role': msg.role,
+                'content': msg.content,
+            },
+            'timestamp': msg.timestamp,
+            'source': ChatSource.PI,
+        }
+        # session_id is stored in execution_id by extract_pi_messages
+        if msg.execution_id:
+            entry['execution_id'] = msg.execution_id
+        chat_data.append(entry)
+    return chat_data
+
+
 def _log_enrichment_errors(errors: List[str], context: str) -> None:
     """Log enrichment errors consistently across all export functions.
     
@@ -248,6 +286,16 @@ def _load_chat_data(
 
             chat_data = _convert_codex_to_dict(messages)
             return chat_data, ChatSource.CODEX, errors
+
+        elif source == ChatSource.PI:
+            # Parse pi coding agent session file
+            from .pi_parser import parse_pi_session_file, extract_pi_messages
+
+            pi_session = parse_pi_session_file(file_path)
+            messages = extract_pi_messages(pi_session)
+
+            chat_data = _convert_pi_to_dict(messages)
+            return chat_data, ChatSource.PI, errors
 
         elif source == ChatSource.CLINE_VSCODE:
             # Parse Cline VS Code task directory.
@@ -945,12 +993,50 @@ def export_project_chats(
 
             # Generate filename
             if format_type == 'book' and config.book_generate_titles:
+                # Thread pi session metadata for optional wingman title sync.
+                # Use the canonical session header 'id' field, not per-message
+                # execution_id, so the key matches wingman's index exactly.
+                _pi_session_id: Optional[str] = None
+                _pi_msg_count: int = 0
+                if detected_source == ChatSource.PI and config.pi_write_wingman_titles:
+                    try:
+                        from .pi_parser import parse_pi_session_meta
+                        # Single-pass: read header + count message lines together
+                        # to avoid opening the file twice.
+                        _meta = parse_pi_session_meta(chat_file)
+                        if _meta.get('type') == 'session':
+                            _pi_session_id = _meta.get('id')
+                            # Count raw message lines in a second sequential
+                            # scan of the (already opened) OS page-cached file.
+                            # This avoids re-parsing the full chat_data.
+                            _raw_count = 0
+                            with open(chat_file, 'r', encoding='utf-8') as _f:
+                                next(_f, None)  # skip header line
+                                for _line in _f:
+                                    _line = _line.strip()
+                                    if not _line:
+                                        continue
+                                    try:
+                                        import json as _json
+                                        _entry = _json.loads(_line)
+                                        if (_entry.get('type') == 'message' and
+                                                _entry.get('message', {}).get('role')
+                                                in ('user', 'assistant')):
+                                            _raw_count += 1
+                                    except Exception:
+                                        pass
+                            _pi_msg_count = _raw_count
+                    except Exception as _e:
+                        logger.debug(f"Could not read pi session meta from {chat_file.name}: {_e}")
+
                 # Title generation works for both Claude Desktop and Kiro IDE formats
                 filename = _generate_book_filename(
                     chat_data,
                     chat_file,
                     llm_client,
-                    chat_filter
+                    chat_filter,
+                    pi_session_id=_pi_session_id,
+                    pi_msg_count=_pi_msg_count,
                 )
             else:
                 filename = chat_file.stem
@@ -1137,18 +1223,28 @@ def _generate_book_filename(
     chat_data: List[Dict[str, Any]],
     chat_file: Path,
     llm_client: Optional[Any],
-    chat_filter: Optional[ChatFilter]
+    chat_filter: Optional[ChatFilter],
+    pi_session_id: Optional[str] = None,
+    pi_msg_count: int = 0,
 ) -> str:
     """Generate descriptive filename for book export.
 
     Generates filename in format: topic-name-2025-11-09
     If date extraction fails, uses: topic-name
 
+    When ``pi_session_id`` is supplied and ``config.pi_write_wingman_titles``
+    is enabled, the raw LLM-generated title (before slugification) is also
+    written to the wingman title index.
+
     Args:
         chat_data: Parsed chat data.
         chat_file: Original chat file path.
         llm_client: Optional LLM client for title generation.
         chat_filter: Optional chat filter for text extraction.
+        pi_session_id: Pi session UUID from the session header ``id`` field.
+            Pass this to trigger wingman title sync for pi sessions.
+        pi_msg_count: Number of messages in the pi session, used by wingman
+            for staleness detection.  Ignored when ``pi_session_id`` is None.
 
     Returns:
         Sanitized filename (without extension).
@@ -1194,6 +1290,19 @@ def _generate_book_filename(
             if excerpt:
                 title = llm_client.generate_chat_title(excerpt, max_words=10)
                 logger.debug(f"Generated LLM title: {title}")
+
+                # Feature B — wingman title sync (pi sessions only, opt-in)
+                if title and pi_session_id and config.pi_write_wingman_titles:
+                    from .pi_title_index import sync_wingman_title
+                    _model = getattr(llm_client, 'model', None) or config.openrouter_model
+                    sync_wingman_title(
+                        config.pi_data_dir,
+                        pi_session_id,
+                        title,
+                        _model,
+                        pi_msg_count,
+                        context="book",
+                    )
 
         except Exception as e:
             logger.warning(f"LLM title generation failed: {e}")

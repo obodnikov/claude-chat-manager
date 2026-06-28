@@ -21,7 +21,7 @@ from .projects import (
     get_project_chat_files
 )
 from .search import search_chat_content
-from .parser import parse_jsonl_file, count_messages_in_file, count_codex_messages_in_file
+from .parser import parse_jsonl_file, count_messages_in_file, count_codex_messages_in_file, count_pi_messages_in_file
 from .exporters import (
     export_chat_pretty,
     export_chat_to_file,
@@ -51,6 +51,10 @@ def _source_label(source: ChatSource) -> str:
         return "[Codex] "
     elif source == ChatSource.KIRO_IDE:
         return "[Kiro]  "
+    elif source == ChatSource.CLINE_VSCODE:
+        return "[Cline] "
+    elif source == ChatSource.PI:
+        return "[Pi]    "
     return "[?]     "
 
 
@@ -94,6 +98,16 @@ def _detect_available_sources() -> list:
         except (OSError, ImportError, ValueError) as e:
             logger.warning(f"Error scanning Codex CLI projects: {e}")
 
+    # Check pi coding agent
+    if config.validate_pi_directory():
+        try:
+            from .pi_projects import discover_pi_workspaces
+            pi_workspaces = discover_pi_workspaces(config.pi_data_dir)
+            if pi_workspaces:
+                available.append((ChatSource.PI, len(pi_workspaces)))
+        except (OSError, ImportError, ValueError) as e:
+            logger.warning(f"Error scanning pi projects: {e}")
+
     return available
 
 
@@ -105,6 +119,10 @@ def _source_icon(source: ChatSource) -> str:
         return "💡 Kiro IDE"
     elif source == ChatSource.CODEX:
         return "🔧 Codex CLI"
+    elif source == ChatSource.CLINE_VSCODE:
+        return "🤖 Cline VS Code"
+    elif source == ChatSource.PI:
+        return "🥧 Pi"
     return "❓ Unknown"
 
 
@@ -245,6 +263,8 @@ def display_projects_list(source_filter: Optional[ChatSource] = None) -> None:
             title = "📁 Available Kiro IDE Projects"
         elif source_filter == ChatSource.CODEX:
             title = "📁 Available Codex CLI Projects"
+        elif source_filter == ChatSource.PI:
+            title = "📁 Available Pi Projects"
         else:
             title = "📁 Available Projects (All Sources)"
         
@@ -377,7 +397,7 @@ def browse_project_interactive(project_info: ProjectInfo) -> bool:
     """
     # Use project_info.name directly (already cleaned/decoded for Kiro/Codex projects)
     # For Claude Desktop, clean_project_name handles the path-based name
-    if project_info.source in (ChatSource.KIRO_IDE, ChatSource.CODEX):
+    if project_info.source in (ChatSource.KIRO_IDE, ChatSource.CODEX, ChatSource.PI):
         project_name = project_info.name
     else:
         project_name = clean_project_name(project_info.path.name)
@@ -391,6 +411,8 @@ def browse_project_interactive(project_info: ProjectInfo) -> bool:
             file_type = ".json"
         elif project_info.source == ChatSource.CODEX:
             file_type = "rollout JSONL"
+        elif project_info.source == ChatSource.PI:
+            file_type = "pi session JSONL"
         else:
             file_type = "JSONL"
         print_colored(f"No {file_type} chat files found in project: {project_name}", Colors.YELLOW)
@@ -415,6 +437,8 @@ def browse_project_interactive(project_info: ProjectInfo) -> bool:
                 modified = datetime.fromtimestamp(file_path.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')
                 if project_info.source == ChatSource.CODEX:
                     msg_count = count_codex_messages_in_file(file_path)
+                elif project_info.source == ChatSource.PI:
+                    msg_count = count_pi_messages_in_file(file_path)
                 else:
                     msg_count = count_messages_in_file(file_path)
 
@@ -570,6 +594,8 @@ def interactive_browser(source_filter: Optional[ChatSource] = None) -> None:
             title = "🤖 Kiro IDE Chat Browser"
         elif source_filter == ChatSource.CODEX:
             title = "🤖 Codex CLI Chat Browser"
+        elif source_filter == ChatSource.PI:
+            title = "🤖 Pi Chat Browser"
         else:
             title = "🤖 Chat Browser (All Sources)"
         
