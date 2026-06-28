@@ -198,10 +198,12 @@ Examples:
   %(prog)s --source codex                         # Skip detection, Codex CLI only
   %(prog)s --source cline-vscode                  # Skip detection, Cline VS Code only
   %(prog)s --source cline                         # Same as --source cline-vscode (alias)
+  %(prog)s --source pi                            # Skip detection, pi coding agent only
   %(prog)s --source all                           # Skip detection, all sources
   %(prog)s --source kiro "my-project"             # Browse Kiro project
   %(prog)s --source codex "my-project"            # Browse Codex project
   %(prog)s --source cline-vscode "my-project"     # Browse Cline VS Code project
+  %(prog)s --source pi "my-project"               # Browse pi project
 
 Sanitization Examples:
   %(prog)s "my-project" -f book -o exports/ --sanitize            # Enable sanitization

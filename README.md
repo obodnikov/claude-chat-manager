@@ -2,7 +2,7 @@
 
 A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat files with an intuitive interface and Unix `less`-like paging for smooth reading experience.
 
-**Version 3.2.0** - Now with Cline VS Code extension support! Browse and export chats from Claude Desktop, Kiro IDE, OpenAI Codex CLI, and the Cline VS Code extension.
+**Version 3.3.0** - Now with pi coding agent support! Browse and export chats from Claude Desktop, Kiro IDE, OpenAI Codex CLI, the Cline VS Code extension, and the pi coding agent.
 
 ## ✨ Features
 
@@ -19,6 +19,7 @@ A powerful Python tool to browse, read, and export Claude Desktop's JSONL chat f
 - 🎨 **Colored Output** - Beautiful terminal interface with syntax highlighting
 - ⚡ **Fast Performance** - Efficient parsing of large chat histories
 - 🔧 **Codex CLI Support** - Browse and export OpenAI Codex CLI sessions
+- 🥧 **Pi Coding Agent Support** - Browse and export pi coding agent sessions
 - 🔄 **Easy Navigation** - Intuitive menu system with back buttons
 
 ## 🚀 Installation
@@ -875,6 +876,7 @@ Use the `--source` (or `-s`) flag to control which chat sources to display:
 | `--source codex` | Codex CLI only |
 | `--source cline-vscode` | Cline VS Code extension only |
 | `--source cline` | Alias for `--source cline-vscode` |
+| `--source pi` | Pi coding agent only |
 | `--source all` | All sources combined |
 
 ### Configuration
@@ -882,11 +884,14 @@ Use the `--source` (or `-s`) flag to control which chat sources to display:
 Set the default source in your `.env` file:
 
 ```bash
-# Default chat source (claude, kiro, codex, cline-vscode, cline, or all)
+# Default chat source (claude, kiro, codex, cline-vscode, cline, pi, or all)
 CHAT_SOURCE=claude
 
 # Custom Kiro data directory (optional)
 KIRO_DATA_DIR=/path/to/custom/kiro/data
+
+# Custom pi data directory (optional; default ~/.pi/agent, sessions read from <dir>/sessions/)
+PI_DATA_DIR=/path/to/custom/pi/data
 ```
 
 ### Kiro Data Directory Locations
@@ -1080,7 +1085,89 @@ Tool calls, checkpoints, and lifecycle events are automatically filtered; only a
 - ✅ Sensitive data sanitization
 - ✅ Smart filtering of trivial chats
 
+## 🥧 Pi Coding Agent Support (NEW in v3.3.0!)
+
+Claude Chat Manager supports the [pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) alongside Claude Desktop, Kiro IDE, Codex CLI, and the Cline VS Code extension.
+
+### Quick Start with Pi
+
+```bash
+# List pi projects only
+python3 claude-chat-manager.py --source pi
+
+# List all sources combined
+python3 claude-chat-manager.py --source all
+
+# Export a pi project
+python3 claude-chat-manager.py --source pi "my-project" -f book -o exports/
+
+# Search across pi sessions
+python3 claude-chat-manager.py --source pi -c "database migration"
+```
+
+### How Pi Projects Work
+
+Like Codex CLI, pi stores sessions as JSONL files (a metadata header line followed by message lines) and groups them into projects by their working directory (`cwd`). The tool reads `cwd` from each session header rather than parsing the directory slug:
+
+```
+~/.pi/agent/sessions/
+└── --Users-eobomik-src-my-app--/
+    ├── 2026-06-22T19-19-27_019ef0c5-....jsonl   (cwd: /Users/eobomik/src/my-app)
+    └── 2026-06-27T13-17-02_019ef0d1-....jsonl   (cwd: /Users/eobomik/src/my-app)
+```
+
+Both session files above share the same `cwd`, so they appear as one project: "my-app".
+
+### Configuration
+
+```bash
+# .env
+# Custom pi data directory (default: ~/.pi/agent)
+# Sessions are read from <PI_DATA_DIR>/sessions/
+PI_DATA_DIR=/path/to/custom/pi/data
+
+# Default source filter
+CHAT_SOURCE=pi
+```
+
+The tool reads from `~/.pi/agent/sessions/` by default. Override with `PI_DATA_DIR` in `.env`.
+
+### Features with Pi
+
+All existing features work with pi sessions:
+- ✅ Interactive browsing with `[Pi]` source indicator
+- ✅ All export formats (pretty, markdown, book, wiki)
+- ✅ Content search across sessions
+- ✅ Batch export of projects (grouped by working directory)
+- ✅ Sensitive data sanitization
+- ✅ Smart filtering of trivial chats
+
+### Pi-Specific Handling
+
+- **JSONL Session Format**: Parses the `type:"session"` header and `type:"message"` entries
+- **Content Normalization**: Joins `text` blocks; drops `thinking`, `toolCall`, and `image` blocks; tolerates bare-string content
+- **Role Filtering**: Keeps `user` and `assistant` messages; skips tool/lifecycle entries
+- **Project Grouping**: Sessions sharing the same `cwd` are grouped into one project
+- **Sidecar Safety**: The `.wingman-titles.json` sidecar is never treated as a session file
+
+See [docs/PI_IMPLEMENTATION.md](docs/PI_IMPLEMENTATION.md) for the full implementation guide.
+
 ## 🛠️ What's New
+
+### v3.3.0 - Pi Coding Agent Support (June 2026)
+
+**New Features:**
+- 🥧 **Pi Coding Agent Support**: Browse and export conversations from the [pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) as a fifth chat source
+- 🎯 **Source Selection**: `--source pi` to filter to pi sessions
+- 📁 **Unified Listing**: Pi sessions appear in the combined view with a `[Pi]` source indicator
+- 🗂️ **Project Grouping**: Sessions are grouped into projects by `cwd` (read from the session header)
+- ⚙️ **Configuration**: `PI_DATA_DIR` environment variable to override the default `~/.pi/agent`
+
+**Technical Details:**
+- New `pi_parser.py` and `pi_projects.py` modules for parsing pi session files
+- Header-only fast path for project discovery; process-scoped discovery cache
+- Automatic filtering of `thinking`/`toolCall`/`image` blocks and lifecycle entries — only user/assistant conversation is exported
+- Full integration with existing export, search, sanitization, and filtering features
 
 ### v3.2.0 - Cline VS Code Extension Support (June 2026)
 

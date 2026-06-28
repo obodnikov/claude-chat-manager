@@ -781,6 +781,138 @@ class TestClineVscodeSourceFlag:
         assert parse_source_filter('Cline') == ChatSource.CLINE_VSCODE
 
 
+class TestSourceLabelWidth:
+    """Verify _source_label returns consistent fixed-width strings for all sources."""
+
+    def test_all_labels_same_width(self):
+        from src.cli import _source_label
+        from src.models import ChatSource
+        expected_width = 8  # "[Claude]" is 8 chars
+        for source in ChatSource:
+            if source == ChatSource.UNKNOWN:
+                continue
+            label = _source_label(source)
+            assert len(label) == expected_width, (
+                f"_source_label({source}) returned {label!r} (len={len(label)}), "
+                f"expected width {expected_width}"
+            )
+
+    def test_pi_label_correct(self):
+        from src.cli import _source_label
+        from src.models import ChatSource
+        assert _source_label(ChatSource.PI) == "[Pi]    "
+
+
+class TestPiSourceFlag:
+    """Tests for --source pi in the CLI and config."""
+
+    def test_parse_source_filter_pi(self):
+        """parse_source_filter('pi') returns ChatSource.PI."""
+        from src.cli_utils import parse_source_filter
+        assert parse_source_filter('pi') == ChatSource.PI
+
+    def test_parse_source_filter_pi_uppercase(self):
+        """parse_source_filter is case-insensitive for 'pi'."""
+        from src.cli_utils import parse_source_filter
+        assert parse_source_filter('PI') == ChatSource.PI
+
+    def test_pi_in_source_choices(self):
+        """'pi' must be present in SOURCE_CHOICES and VALID_SOURCE_VALUES."""
+        from src.cli_utils import SOURCE_CHOICES, VALID_SOURCE_VALUES
+        assert 'pi' in SOURCE_CHOICES
+        assert 'pi' in VALID_SOURCE_VALUES
+
+    def test_argparse_accepts_pi(self):
+        """--source pi is accepted as a valid argparse choice."""
+        import argparse
+        from src.cli_utils import SOURCE_CHOICES
+        p = argparse.ArgumentParser()
+        p.add_argument('--source', choices=list(SOURCE_CHOICES), default=None)
+        args = p.parse_args(['--source', 'pi'])
+        assert args.source == 'pi'
+
+    def test_chat_source_env_pi(self, monkeypatch):
+        """CHAT_SOURCE=pi is handled by config.chat_source_filter."""
+        from src.config import Config
+        monkeypatch.setenv('CHAT_SOURCE', 'pi')
+        cfg = Config()
+        assert cfg.chat_source_filter == ChatSource.PI
+
+
+class TestPiExporterDetection:
+    """Integration tests for Pi source detection and loading via exporters."""
+
+    def _write_pi_session(self, path: Path, messages: list) -> None:
+        """Write a minimal pi session JSONL file."""
+        import json
+        header = {
+            "type": "session", "version": 3,
+            "id": "test-uuid-exporter",
+            "timestamp": "2026-06-28T10:00:00.000Z",
+            "cwd": "/home/user/project",
+        }
+        with open(path, "w") as fh:
+            fh.write(json.dumps(header) + "\n")
+            for msg in messages:
+                fh.write(json.dumps(msg) + "\n")
+
+    def test_detect_chat_source_returns_pi(self, tmp_path):
+        """_detect_chat_source identifies a pi session JSONL as ChatSource.PI."""
+        from src.exporters import _detect_chat_source
+        f = tmp_path / "session.jsonl"
+        self._write_pi_session(f, [])
+        assert _detect_chat_source(f) == ChatSource.PI
+
+    def test_detect_chat_source_pi_without_cwd(self, tmp_path):
+        """Pi detection works even when cwd is absent from the header."""
+        import json
+        from src.exporters import _detect_chat_source
+        f = tmp_path / "no_cwd.jsonl"
+        header = {"type": "session", "version": 3, "id": "uuid-no-cwd",
+                  "timestamp": "2026-06-28T10:00:00.000Z"}
+        f.write_text(json.dumps(header) + "\n")
+        assert _detect_chat_source(f) == ChatSource.PI
+
+    def test_detect_chat_source_pi_with_only_timestamp(self, tmp_path):
+        """Pi detection works with only timestamp (no id/version/cwd)."""
+        import json
+        from src.exporters import _detect_chat_source
+        f = tmp_path / "minimal.jsonl"
+        header = {"type": "session", "timestamp": "2026-06-28T10:00:00.000Z"}
+        f.write_text(json.dumps(header) + "\n")
+        assert _detect_chat_source(f) == ChatSource.PI
+
+    def test_load_chat_data_pi_session(self, tmp_path):
+        """_load_chat_data loads a pi session and returns ChatSource.PI with messages."""
+        from src.exporters import _load_chat_data
+        f = tmp_path / "session.jsonl"
+        self._write_pi_session(f, [
+            {"type": "message", "id": "m1", "parentId": "root",
+             "timestamp": "2026-06-28T10:00:01.000Z",
+             "message": {"role": "user", "content": "Hello pi!"}},
+            {"type": "message", "id": "m2", "parentId": "m1",
+             "timestamp": "2026-06-28T10:00:02.000Z",
+             "message": {"role": "assistant",
+                          "content": [{"type": "text", "text": "Hi!"}]}},
+        ])
+        chat_data, source, errors = _load_chat_data(f)
+        assert source == ChatSource.PI
+        assert errors == []
+        assert len(chat_data) == 2
+        roles = [m["message"]["role"] for m in chat_data]
+        assert roles == ["user", "assistant"]
+
+    def test_codex_not_detected_as_pi(self, tmp_path):
+        """A Codex rollout file (type=session_meta) is NOT detected as pi."""
+        import json
+        from src.exporters import _detect_chat_source
+        f = tmp_path / "rollout.jsonl"
+        f.write_text(
+            json.dumps({"type": "session_meta", "payload": {"id": "x", "cwd": "/"}}) + "\n"
+        )
+        assert _detect_chat_source(f) == ChatSource.CODEX
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 

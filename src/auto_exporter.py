@@ -34,6 +34,7 @@ SOURCE_LABELS: Dict[ChatSource, str] = {
     ChatSource.CLAUDE_DESKTOP: "Claude",
     ChatSource.KIRO_IDE: "Kiro",
     ChatSource.CODEX: "Codex",
+    ChatSource.PI: "Pi",
     ChatSource.UNKNOWN: "Unknown",
 }
 

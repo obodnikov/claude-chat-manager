@@ -75,6 +75,7 @@ class Config:
         self._kiro_dir: Optional[Path] = None
         self._codex_dir: Optional[Path] = None
         self._cline_vscode_dir: Optional[Path] = None
+        self._pi_dir: Optional[Path] = None
         self._load_config()
 
     def _load_config(self) -> None:
@@ -112,6 +113,15 @@ class Config:
             else:
                 self._codex_dir = Path.home() / '.codex'
             logger.debug(f"Using default Codex directory: {self._codex_dir}")
+
+        # Pi coding agent data directory
+        pi_dir_env = os.getenv('PI_DATA_DIR')
+        if pi_dir_env:
+            self._pi_dir = Path(pi_dir_env)
+            logger.info(f"Using PI_DATA_DIR from environment: {self._pi_dir}")
+        else:
+            self._pi_dir = Path.home() / '.pi' / 'agent'
+            logger.debug(f"Using default Pi directory: {self._pi_dir}")
 
         # Cline data directory (VS Code globalStorage)
         cline_dir_env = os.getenv('CLINE_VSCODE_DATA_DIR')
@@ -219,6 +229,37 @@ class Config:
             Path to Cline data directory (VS Code globalStorage).
         """
         return self._cline_vscode_dir
+
+    @property
+    def pi_data_dir(self) -> Path:
+        """Get the pi coding agent data directory path.
+
+        Returns:
+            Path to pi data directory (~/.pi/agent by default).
+        """
+        assert self._pi_dir is not None  # always set by _load_config()
+        return self._pi_dir
+
+    def validate_pi_directory(self) -> bool:
+        """Validate that the pi data directory exists and contains a sessions subdir.
+
+        Returns:
+            True if the directory exists and ``sessions/`` is present.
+        """
+        if not self._pi_dir.exists():
+            logger.debug(f"Pi data directory not found: {self._pi_dir}")
+            return False
+        if not self._pi_dir.is_dir():
+            logger.warning(f"Pi data path is not a directory: {self._pi_dir}")
+            return False
+        sessions_dir = self._pi_dir / 'sessions'
+        if not sessions_dir.exists():
+            logger.debug(f"Pi sessions directory not found: {sessions_dir}")
+            return False
+        if not sessions_dir.is_dir():
+            logger.warning(f"Pi sessions path is not a directory: {sessions_dir}")
+            return False
+        return True
 
     def validate_codex_directory(self) -> bool:
         """Validate that the Codex data directory exists.

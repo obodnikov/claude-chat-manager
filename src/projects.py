@@ -14,6 +14,7 @@ from .exceptions import ProjectNotFoundError
 from .models import ProjectInfo, ChatSource
 from .formatters import clean_project_name
 from .parser import count_messages_in_file
+from .pi_projects import _safe_mtime as _safe_mtime_projects  # shared safe-stat helper
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,41 @@ def _workspace_path_basename(workspace_path: str) -> str:
     if win_name and win_name != workspace_path:
         return win_name
     return native_name
+
+
+def _pi_workspace_to_project_info(
+    workspace: "PiWorkspace",  # type: ignore[name-defined]  # noqa: F821
+    pi_data_dir: Path,
+) -> ProjectInfo:
+    """Convert a PiWorkspace to a ProjectInfo.
+
+    Args:
+        workspace: Discovered pi workspace.
+        pi_data_dir: Root pi data directory (kept for call-site symmetry
+            with other ``_*_to_project_info`` helpers; not used to set
+            ``ProjectInfo.path``).
+
+    Returns:
+        ProjectInfo with source=PI.  ``path`` is set to the actual workspace
+        cwd (``workspace.workspace_path``) so it displays correctly in the UI.
+        ``session_ids`` carries the absolute session file paths used by
+        ``get_project_chat_files()``.
+    """
+    return ProjectInfo(
+        name=workspace.workspace_name,
+        # Use the real project directory as the canonical path — more useful
+        # for display than the internal sessions root.  File resolution uses
+        # session_ids (absolute paths) so path is not used as a glob base.
+        path=Path(workspace.workspace_path),
+        file_count=workspace.session_count,
+        total_messages=0,
+        last_modified=workspace.last_modified,
+        sort_timestamp=None,
+        source=ChatSource.PI,
+        workspace_path=workspace.workspace_path,
+        # Absolute file-path strings — resolved in get_project_chat_files()
+        session_ids=[str(s.file_path) for s in workspace.sessions],
+    )
 
 
 def _cline_workspace_to_project_info(
@@ -142,6 +178,7 @@ def list_all_projects(source_filter: Optional[ChatSource] = None) -> List[Projec
     scan_kiro = source_filter is None or source_filter == ChatSource.KIRO_IDE
     scan_codex = source_filter is None or source_filter == ChatSource.CODEX
     scan_cline_vscode = source_filter is None or source_filter == ChatSource.CLINE_VSCODE
+    scan_pi = source_filter is None or source_filter == ChatSource.PI
     
     # Scan Claude Desktop projects
     if scan_claude:
@@ -233,6 +270,25 @@ def list_all_projects(source_filter: Optional[ChatSource] = None) -> List[Projec
         else:
             logger.debug("Cline VS Code data directory not found, skipping Cline VS Code projects")
 
+    # Scan pi coding agent projects
+    if scan_pi:
+        if config.validate_pi_directory():
+            try:
+                from .pi_projects import discover_pi_workspaces
+                pi_data_dir = config.pi_data_dir
+                pi_workspaces = discover_pi_workspaces(pi_data_dir)
+
+                for pi_ws in pi_workspaces:
+                    projects.append(_pi_workspace_to_project_info(pi_ws, pi_data_dir))
+                logger.info(
+                    f"Found {len([p for p in projects if p.source == ChatSource.PI])} "
+                    f"pi coding agent projects"
+                )
+            except Exception as e:
+                logger.warning(f"Error discovering pi projects: {e}")
+        else:
+            logger.debug("Pi data directory not found, skipping pi projects")
+
     if not projects:
         raise ProjectNotFoundError("No projects found in any configured source")
     
@@ -256,6 +312,7 @@ def find_project_by_name(project_name: str, source_filter: Optional[ChatSource] 
     search_kiro = source_filter is None or source_filter == ChatSource.KIRO_IDE
     search_codex = source_filter is None or source_filter == ChatSource.CODEX
     search_cline_vscode = source_filter is None or source_filter == ChatSource.CLINE_VSCODE
+    search_pi = source_filter is None or source_filter == ChatSource.PI
     
     # Search Claude Desktop projects
     if search_claude:
@@ -376,6 +433,26 @@ def find_project_by_name(project_name: str, source_filter: Optional[ChatSource] 
             except Exception as e:
                 logger.warning(f"Error searching Cline VS Code projects: {e}")
 
+    # Search pi coding agent projects
+    if search_pi:
+        if config.validate_pi_directory():
+            try:
+                from .pi_projects import discover_pi_workspaces
+                pi_data_dir = config.pi_data_dir
+                pi_workspaces = discover_pi_workspaces(pi_data_dir)
+
+                for pi_ws in pi_workspaces:
+                    if pi_ws.workspace_name.lower() == project_name.lower():
+                        logger.debug(f"Found pi project: {pi_ws.workspace_path}")
+                        return _pi_workspace_to_project_info(pi_ws, pi_data_dir)
+
+                    workspace_basename = Path(pi_ws.workspace_path).name
+                    if workspace_basename.lower() == project_name.lower():
+                        logger.debug(f"Found pi project by path: {pi_ws.workspace_path}")
+                        return _pi_workspace_to_project_info(pi_ws, pi_data_dir)
+            except Exception as e:
+                logger.warning(f"Error searching pi projects: {e}")
+
     logger.warning(f"Project not found: {project_name}")
     return None
 
@@ -449,6 +526,17 @@ def get_project_chat_files(
         if session_ids:
             chat_files = [Path(p) for p in session_ids if Path(p).exists()]
             chat_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+            return chat_files
+        return []
+
+    if source == ChatSource.PI:
+        # Pi sessions are stored as absolute paths in session_ids (same pattern as Codex)
+        if session_ids:
+            chat_files = [Path(p) for p in session_ids if Path(p).exists()]
+            chat_files.sort(
+                key=lambda f: _safe_mtime_projects(f),
+                reverse=True,
+            )
             return chat_files
         return []
 

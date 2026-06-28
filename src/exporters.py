@@ -66,6 +66,15 @@ def _detect_chat_source(file_path: Path) -> ChatSource:
                 first_line = f.readline().strip()
                 if first_line:
                     data = json.loads(first_line)
+                    # Pi session files start with type="session".  Require at
+                    # least one additional pi header field (id, version, cwd, or
+                    # timestamp) to reduce false-positives on hypothetical other
+                    # "session" typed formats.
+                    _PI_HEADER_FIELDS = frozenset({"id", "version", "cwd", "timestamp"})
+                    if isinstance(data, dict) and data.get('type') == 'session' and (
+                        _PI_HEADER_FIELDS & data.keys()
+                    ):
+                        return ChatSource.PI
                     # Codex rollout files start with session_meta
                     if isinstance(data, dict) and data.get('type') == 'session_meta':
                         return ChatSource.CODEX
@@ -189,6 +198,35 @@ def _convert_cline_vscode_to_dict(messages: List[ChatMessage]) -> List[Dict[str,
     return chat_data
 
 
+def _convert_pi_to_dict(messages: List[ChatMessage]) -> List[Dict[str, Any]]:
+    """Convert pi ChatMessage objects to dict format for compatibility.
+
+    Mirrors the shape produced by _convert_codex_to_dict() so that all
+    downstream export functions can consume pi messages without modification.
+
+    Args:
+        messages: List of ChatMessage objects from extract_pi_messages().
+
+    Returns:
+        List of message dicts compatible with export functions.
+    """
+    chat_data = []
+    for msg in messages:
+        entry: Dict[str, Any] = {
+            'message': {
+                'role': msg.role,
+                'content': msg.content,
+            },
+            'timestamp': msg.timestamp,
+            'source': ChatSource.PI,
+        }
+        # session_id is stored in execution_id by extract_pi_messages
+        if msg.execution_id:
+            entry['execution_id'] = msg.execution_id
+        chat_data.append(entry)
+    return chat_data
+
+
 def _log_enrichment_errors(errors: List[str], context: str) -> None:
     """Log enrichment errors consistently across all export functions.
     
@@ -248,6 +286,16 @@ def _load_chat_data(
 
             chat_data = _convert_codex_to_dict(messages)
             return chat_data, ChatSource.CODEX, errors
+
+        elif source == ChatSource.PI:
+            # Parse pi coding agent session file
+            from .pi_parser import parse_pi_session_file, extract_pi_messages
+
+            pi_session = parse_pi_session_file(file_path)
+            messages = extract_pi_messages(pi_session)
+
+            chat_data = _convert_pi_to_dict(messages)
+            return chat_data, ChatSource.PI, errors
 
         elif source == ChatSource.CLINE_VSCODE:
             # Parse Cline VS Code task directory.
