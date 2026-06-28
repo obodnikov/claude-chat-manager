@@ -811,6 +811,26 @@ class Config:
         value = os.getenv('SANITIZE_REPORT', 'false').lower()
         return value in ('true', '1', 'yes', 'on')
 
+    # Pi / Wingman Settings
+
+    @property
+    def pi_write_wingman_titles(self) -> bool:
+        """Check if LLM-generated titles should be written to the wingman index.
+
+        When True, book and wiki exports for pi sessions will persist the
+        LLM-generated title to ``~/.pi/agent/sessions/.wingman-titles.json``
+        (the sqowe-wingman sidecar index) so the VS Code extension can display
+        it without running its own LLM call.
+
+        Off by default — this is an opt-in cross-project write.  Enable it
+        deliberately by setting ``PI_WRITE_WINGMAN_TITLES=true`` in ``.env``.
+
+        Returns:
+            True if wingman title sync is enabled.
+        """
+        value = os.getenv('PI_WRITE_WINGMAN_TITLES', 'false').lower()
+        return value in ('true', '1', 'yes', 'on')
+
 
 # Global configuration instance
 config = Config()
