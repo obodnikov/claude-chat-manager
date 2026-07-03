@@ -643,6 +643,7 @@ class AutoExporter:
                 export_dir=tmp_dir,
                 format_type=self.export_format,
                 source=project_info.source,
+                session_ids=project_info.session_ids,
             )
             return len(exported_files)
         except ExportError as e:

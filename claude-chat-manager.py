@@ -432,7 +432,9 @@ Environment Variables:
                         api_key,
                         update_mode=mode,
                         sanitize=sanitize_enabled,
-                        keep_steering=args.keep_steering if args.keep_steering else None
+                        keep_steering=args.keep_steering if args.keep_steering else None,
+                        source=project_info.source,
+                        session_ids=project_info.session_ids
                     )
 
                     size = wiki_output.stat().st_size
@@ -484,7 +486,8 @@ Environment Variables:
                         args.format,
                         sanitize=sanitize_enabled,
                         source=project_info.source,
-                        keep_steering=args.keep_steering if args.keep_steering else None
+                        keep_steering=args.keep_steering if args.keep_steering else None,
+                        session_ids=project_info.session_ids
                     )
                     print_colored(f"✅ Exported {len(exported_files)} chats to: {export_dir}/", Colors.GREEN)
                     for file in exported_files:
