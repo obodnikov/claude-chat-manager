@@ -855,7 +855,8 @@ def export_project_chats(
     api_key: Optional[str] = None,
     sanitize: Optional[bool] = None,
     source: ChatSource = ChatSource.CLAUDE_DESKTOP,
-    keep_steering: Optional[bool] = None
+    keep_steering: Optional[bool] = None,
+    session_ids: Optional[List[str]] = None
 ) -> List[Path]:
     """Export all chats in a project to a directory.
 
@@ -874,6 +875,10 @@ def export_project_chats(
         sanitize: Override .env sanitization setting (True/False/None).
         source: Chat source type (Claude Desktop or Kiro IDE).
         keep_steering: Keep full steering content (overrides config if provided).
+        session_ids: For Pi (ChatSource.PI): absolute session file paths from
+            ``ProjectInfo.session_ids``. Required for Pi because its
+            ``project_path`` is the dev workspace cwd (for display), not a
+            directory that actually contains the session files.
 
     Returns:
         List of exported file paths.
@@ -890,6 +895,12 @@ def export_project_chats(
             # Codex: files are scattered across date directories
             # Try recursive glob for rollout files
             chat_files = list(project_path.rglob('rollout-*.jsonl'))
+        elif source == ChatSource.PI:
+            # Pi sessions live under the shared pi sessions root, grouped
+            # into per-workspace subdirectories — project_path is the dev
+            # cwd, not a directory containing the files. Resolve from
+            # session_ids instead (same pattern as get_project_chat_files()).
+            chat_files = [Path(p) for p in (session_ids or []) if Path(p).exists()]
         elif source == ChatSource.KIRO_IDE:
             chat_files = [f for f in project_path.glob('*.json') if f.name != 'sessions.json']
         elif source == ChatSource.CLINE_VSCODE:
@@ -1502,7 +1513,9 @@ def export_project_wiki(
     api_key: Optional[str] = None,
     update_mode: str = 'new',
     sanitize: Optional[bool] = None,
-    keep_steering: Optional[bool] = None
+    keep_steering: Optional[bool] = None,
+    source: ChatSource = ChatSource.CLAUDE_DESKTOP,
+    session_ids: Optional[List[str]] = None
 ) -> None:
     """Export entire project as single wiki file with AI-generated titles.
 
@@ -1514,6 +1527,12 @@ def export_project_wiki(
         update_mode: Mode: 'new', 'update', or 'rebuild'.
         sanitize: Override .env sanitization setting (True/False/None).
         keep_steering: Keep full steering content (overrides config if provided).
+        source: Chat source type. Only Pi (ChatSource.PI) changes file
+            discovery today; other sources keep the existing glob behavior.
+        session_ids: For Pi (ChatSource.PI): absolute session file paths from
+            ``ProjectInfo.session_ids``. Required for Pi because its
+            ``project_path`` is the dev workspace cwd, not a directory that
+            actually contains the session files.
 
     Raises:
         ExportError: If export operation fails.
@@ -1523,7 +1542,14 @@ def export_project_wiki(
         from .llm_client import OpenRouterClient
 
         # Get all chat files
-        chat_files = list(project_path.glob('*.jsonl'))
+        if source == ChatSource.PI:
+            # Pi sessions live under the shared pi sessions root, grouped
+            # into per-workspace subdirectories — project_path is the dev
+            # cwd, not a directory containing the files. Resolve from
+            # session_ids instead (same pattern as get_project_chat_files()).
+            chat_files = [Path(p) for p in (session_ids or []) if Path(p).exists()]
+        else:
+            chat_files = list(project_path.glob('*.jsonl'))
         if not chat_files:
             raise ExportError(f"No chat files found in {project_path}")
 

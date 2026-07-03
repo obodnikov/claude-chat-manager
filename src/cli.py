@@ -480,7 +480,10 @@ def browse_project_interactive(project_info: ProjectInfo) -> bool:
                 export_dir = Path(get_export_dirname(project_name, 'markdown'))
                 print_colored(f"📤 Exporting all chats to markdown in: {export_dir}", Colors.BLUE)
 
-                exported_files = export_project_chats(project_info.path, export_dir, 'markdown', source=project_info.source)
+                exported_files = export_project_chats(
+                    project_info.path, export_dir, 'markdown',
+                    source=project_info.source, session_ids=project_info.session_ids
+                )
 
                 print_colored(f"✅ All chats exported to: {export_dir}/", Colors.GREEN)
                 for file in exported_files:
@@ -491,7 +494,10 @@ def browse_project_interactive(project_info: ProjectInfo) -> bool:
                 export_dir = Path(get_export_dirname(project_name, 'book'))
                 print_colored(f"📚 Exporting all chats to book format in: {export_dir}", Colors.BLUE)
 
-                exported_files = export_project_chats(project_info.path, export_dir, 'book', source=project_info.source)
+                exported_files = export_project_chats(
+                    project_info.path, export_dir, 'book',
+                    source=project_info.source, session_ids=project_info.session_ids
+                )
 
                 print_colored(f"✅ All chats exported to book format: {export_dir}/", Colors.GREEN)
                 for file in exported_files:
