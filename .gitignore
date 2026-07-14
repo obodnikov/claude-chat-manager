@@ -63,3 +63,5 @@ tmp/
 # Semantic Index
 .index/
 .firecrawl/
+
+.claude/
