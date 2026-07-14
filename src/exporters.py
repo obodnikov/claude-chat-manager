@@ -892,9 +892,12 @@ def export_project_chats(
 
         # Get chat files based on source type
         if source == ChatSource.CODEX:
-            # Codex: files are scattered across date directories
-            # Try recursive glob for rollout files
-            chat_files = list(project_path.rglob('rollout-*.jsonl'))
+            # Codex: sessions live under a shared ~/.codex/sessions root,
+            # not a per-project directory, so project_path can't be
+            # globbed directly — it would pull in every Codex project's
+            # rollout files. Resolve from session_ids instead (same
+            # pattern as ChatSource.PI below).
+            chat_files = [Path(p) for p in (session_ids or []) if Path(p).exists()]
         elif source == ChatSource.PI:
             # Pi sessions live under the shared pi sessions root, grouped
             # into per-workspace subdirectories — project_path is the dev
